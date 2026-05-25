@@ -62,6 +62,9 @@ func handleCmdConn(conn net.Conn) {
 			reply = fmt.Sprintf("online=%d\n", n)
 		case strings.HasPrefix(cmd, "echo "):
 			reply = strings.TrimPrefix(cmd, "echo ") + "\n"
+		case cmd == "help":
+			reply = "commands: time, echo, online, help\n"
+			
 		default:
 			reply = "received: " + cmd + "\n"
 		}
