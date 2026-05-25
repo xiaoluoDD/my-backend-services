@@ -1,0 +1,9 @@
+# 编译产物
+echoserver
+echohttp
+*.exe
+*.out
+
+# 临时文件
+*.swp
+*.swo
