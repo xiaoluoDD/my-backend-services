@@ -1,8 +1,13 @@
 # 编译产物
 echoserver
 echohttp
+wecom/wecom
 *.exe
 *.out
+
+# 密钥与本地配置
+.env
+wecom/.env
 
 # 临时文件
 *.swp
