@@ -2,6 +2,8 @@
 echoserver
 echohttp
 wecom/wecom
+http/api
+http/api.exe
 *.exe
 *.out
 
