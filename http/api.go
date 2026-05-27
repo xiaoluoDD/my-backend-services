@@ -4,10 +4,19 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/wecom"
 )
+
+func listenAddr() string {
+	port := os.Getenv("HTTP_PORT")
+	if port == "" {
+		port = "8081"
+	}
+	return ":" + port
+}
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -64,7 +73,8 @@ func main() {
 		})
 	})
 
-	log.Println("HTTP API listening on :8080")
-	log.Println("  GET/POST http://<host>:8080/api/wecom/test  — 发送企业微信测试")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	addr := listenAddr()
+	log.Printf("HTTP API listening on %s\n", addr)
+	log.Printf("  GET/POST http://<host>%s/api/wecom/test  — 发送企业微信测试\n", addr)
+	log.Fatal(http.ListenAndServe(addr, nil))
 }
