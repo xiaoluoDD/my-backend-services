@@ -109,7 +109,7 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 		}
 	}
 
-	fillMissingNames(token, members)
+	enrichMemberDetails(token, members)
 
 	deptNames, err := FetchDepartmentList(token)
 	if err != nil {
@@ -146,18 +146,20 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 	return finish("ok", len(users), nil)
 }
 
-func fillMissingNames(token string, members map[string]*member) {
+// enrichMemberDetails 对缺少姓名/手机/部门的成员调用 user/get 补全。
+// allow_user 可见成员在 agent/get 里通常只有 userid+姓名，必须单独拉详情才有部门。
+func enrichMemberDetails(token string, members map[string]*member) {
 	log := logger.Default()
 	for userid, m := range members {
-		if m.Name != "" {
+		if m.Name != "" && m.Mobile != "" && len(m.Departments) > 0 {
 			continue
 		}
 		detail, err := FetchUserDetail(token, userid)
 		if err != nil {
-			log.Warn("补全成员姓名失败", "userid", userid, "err", err)
+			log.Warn("补全成员资料失败", "userid", userid, "err", err)
 			continue
 		}
-		if detail.Name != "" {
+		if m.Name == "" && detail.Name != "" {
 			m.Name = detail.Name
 		}
 		if m.Mobile == "" && detail.Mobile != "" {
