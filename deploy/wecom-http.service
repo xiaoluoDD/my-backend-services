@@ -1,0 +1,23 @@
+[Unit]
+Description=WeCom HTTP API (项目看板后端)
+Documentation=file://@REPO_ROOT@/docs/deploy-systemd.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=@REPO_ROOT@/wecom/.env
+ExecStart=@REPO_ROOT@/bin/wecom-http
+Restart=on-failure
+RestartSec=5
+
+# 应用日志仍写入 @REPO_ROOT@/logs/（由 LOG_DIR 控制）
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wecom-http
+
+[Install]
+WantedBy=multi-user.target
