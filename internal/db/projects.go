@@ -49,6 +49,64 @@ func ListProjects(db *sql.DB) ([]Project, error) {
 	return list, rows.Err()
 }
 
+// GetProject 按 ID 查询项目。
+func GetProject(db *sql.DB, id int64) (Project, error) {
+	var p Project
+	err := db.QueryRow(
+		`SELECT id, year, work_no, name, manager_userid, manager_name,
+		        group_chat, group_chat_id, status, start_date, end_date, tasks, updated_at
+		 FROM projects WHERE id=?`, id,
+	).Scan(
+		&p.ID, &p.Year, &p.WorkNo, &p.Name, &p.ManagerUserID, &p.ManagerName,
+		&p.GroupChat, &p.GroupChatID, &p.Status, &p.StartDate, &p.EndDate, &p.Tasks, &p.UpdatedAt,
+	)
+	return p, err
+}
+
+// CreateProject 新建项目（不创建企微群）。
+func CreateProject(db *sql.DB, p Project) (int64, error) {
+	now := time.Now().Format(time.RFC3339)
+	res, err := db.Exec(
+		`INSERT INTO projects (
+			year, work_no, name, manager_userid, manager_name,
+			group_chat, group_chat_id, status, start_date, end_date, tasks, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.Year, p.WorkNo, p.Name, p.ManagerUserID, p.ManagerName,
+		p.GroupChat, p.GroupChatID, p.Status, p.StartDate, p.EndDate, p.Tasks, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// UpdateProject 更新项目。
+func UpdateProject(db *sql.DB, p Project) error {
+	if p.ID <= 0 {
+		return fmt.Errorf("无效的项目 ID")
+	}
+	now := time.Now().Format(time.RFC3339)
+	_, err := db.Exec(
+		`UPDATE projects SET
+			year=?, work_no=?, name=?, manager_userid=?, manager_name=?,
+			group_chat=?, group_chat_id=?, status=?, start_date=?, end_date=?, tasks=?, updated_at=?
+		 WHERE id=?`,
+		p.Year, p.WorkNo, p.Name, p.ManagerUserID, p.ManagerName,
+		p.GroupChat, p.GroupChatID, p.Status, p.StartDate, p.EndDate, p.Tasks, now,
+		p.ID,
+	)
+	return err
+}
+
+// DeleteProject 删除项目。
+func DeleteProject(db *sql.DB, id int64) error {
+	if id <= 0 {
+		return fmt.Errorf("无效的项目 ID")
+	}
+	_, err := db.Exec(`DELETE FROM projects WHERE id=?`, id)
+	return err
+}
+
 func seedProjectsIfEmpty(db *sql.DB) error {
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM projects`).Scan(&n); err != nil {
