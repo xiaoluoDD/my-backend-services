@@ -114,10 +114,11 @@ type tagGetResp struct {
 
 type userGetResp struct {
 	baseResp
-	UserID     string `json:"userid"`
-	Name       string `json:"name"`
-	Mobile     string `json:"mobile"`
-	Department []int  `json:"department"`
+	UserID         string `json:"userid"`
+	Name           string `json:"name"`
+	Mobile         string `json:"mobile"`
+	Department     []int  `json:"department"`
+	MainDepartment int    `json:"main_department"`
 }
 
 // FetchUserDetail 读取单个成员详情（用于补全姓名）。

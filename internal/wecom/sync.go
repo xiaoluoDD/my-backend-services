@@ -142,7 +142,14 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 		return finish("failed", len(users), fmt.Errorf("save corp info: %w", err))
 	}
 
-	log.Info("wecom sync ok", "run_id", runID, "user_count", len(users))
+	emptyDept := 0
+	for _, u := range users {
+		if u.Departments == "" {
+			emptyDept++
+			log.Info("sync: member has no department", "userid", u.UserID, "name", u.Name, "sources", u.Sources)
+		}
+	}
+	log.Info("wecom sync ok", "run_id", runID, "user_count", len(users), "empty_departments", emptyDept)
 	return finish("ok", len(users), nil)
 }
 
@@ -154,6 +161,9 @@ func enrichMemberDetails(token string, members map[string]*member) {
 		if m.Name != "" && m.Mobile != "" && len(m.Departments) > 0 {
 			continue
 		}
+		log.Info("sync: enrich via user/get", "userid", userid,
+			"has_name", m.Name != "", "has_mobile", m.Mobile != "", "dept_ids", len(m.Departments))
+
 		detail, err := FetchUserDetail(token, userid)
 		if err != nil {
 			log.Warn("补全成员资料失败", "userid", userid, "err", err)
@@ -165,8 +175,14 @@ func enrichMemberDetails(token string, members map[string]*member) {
 		if m.Mobile == "" && detail.Mobile != "" {
 			m.Mobile = detail.Mobile
 		}
-		if len(m.Departments) == 0 && len(detail.Department) > 0 {
-			m.Departments = detail.Department
+		depts := detail.Department
+		if len(depts) == 0 && detail.MainDepartment > 0 {
+			depts = []int{detail.MainDepartment}
 		}
+		if len(m.Departments) == 0 && len(depts) > 0 {
+			m.Departments = depts
+		}
+		log.Info("sync: user/get result", "userid", userid,
+			"dept_ids", len(m.Departments), "main_department", detail.MainDepartment)
 	}
 }
