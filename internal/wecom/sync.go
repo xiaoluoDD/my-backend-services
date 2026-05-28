@@ -111,10 +111,36 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 
 	enrichMemberDetails(token, members)
 
-	deptNames, err := FetchDepartmentList(token)
+	departments, err := FetchDepartments(token)
 	if err != nil {
-		log.Warn("拉取部门列表失败，部门将显示为 ID", "err", err)
-		deptNames = map[int]string{}
+		log.Warn("拉取部门列表失败", "err", err)
+		departments = nil
+	}
+	deptNames := make(map[int]string, len(departments))
+	for _, d := range departments {
+		if d.Name != "" {
+			deptNames[d.ID] = d.Name
+		}
+	}
+
+	if len(departments) > 0 {
+		deptIndex, idxErr := BuildUserDepartmentIndex(token, departments)
+		if idxErr != nil {
+			log.Warn("构建部门成员索引失败", "err", idxErr)
+		} else {
+			filled := 0
+			for userid, m := range members {
+				if len(m.Departments) > 0 {
+					continue
+				}
+				if ids, ok := deptIndex[userid]; ok && len(ids) > 0 {
+					m.Departments = ids
+					filled++
+					log.Info("sync: department from dept user/list", "userid", userid, "dept_ids", len(ids))
+				}
+			}
+			log.Info("sync: dept index built", "departments", len(departments), "indexed_users", len(deptIndex), "filled", filled)
+		}
 	}
 
 	now := time.Now().Format(time.RFC3339)

@@ -188,8 +188,14 @@ type departmentListResp struct {
 	} `json:"department"`
 }
 
-// FetchDepartmentList 拉取企业部门 id→名称（需「通讯录-部门信息只读」权限）。
-func FetchDepartmentList(token string) (map[int]string, error) {
+// DepartmentInfo 部门简要信息。
+type DepartmentInfo struct {
+	ID   int
+	Name string
+}
+
+// FetchDepartments 拉取企业全部部门（需「通讯录-部门信息只读」）。
+func FetchDepartments(token string) ([]DepartmentInfo, error) {
 	body, err := apiGET(token, "/cgi-bin/department/list", nil)
 	if err != nil {
 		return nil, err
@@ -201,13 +207,66 @@ func FetchDepartmentList(token string) (map[int]string, error) {
 	if dr.ErrCode != 0 {
 		return nil, fmt.Errorf("department/list 失败: errcode=%d errmsg=%s", dr.ErrCode, dr.ErrMsg)
 	}
-	out := make(map[int]string, len(dr.Department))
+	out := make([]DepartmentInfo, 0, len(dr.Department))
 	for _, d := range dr.Department {
-		if d.ID > 0 && d.Name != "" {
+		if d.ID > 0 {
+			out = append(out, DepartmentInfo{ID: d.ID, Name: d.Name})
+		}
+	}
+	return out, nil
+}
+
+// FetchDepartmentList 拉取企业部门 id→名称。
+func FetchDepartmentList(token string) (map[int]string, error) {
+	depts, err := FetchDepartments(token)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int]string, len(depts))
+	for _, d := range depts {
+		if d.Name != "" {
 			out[d.ID] = d.Name
 		}
 	}
 	return out, nil
+}
+
+func appendUniqueInts(dst []int, ids ...int) []int {
+	seen := make(map[int]struct{}, len(dst)+len(ids))
+	for _, id := range dst {
+		if id > 0 {
+			seen[id] = struct{}{}
+		}
+	}
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		dst = append(dst, id)
+	}
+	return dst
+}
+
+// BuildUserDepartmentIndex 遍历各部门成员列表，建立 userid→部门 id 索引。
+// 用于 allow_user 成员在 user/get 不返回部门时的补全。
+func BuildUserDepartmentIndex(token string, departments []DepartmentInfo) (map[string][]int, error) {
+	index := make(map[string][]int)
+	for _, d := range departments {
+		ur, err := FetchDepartmentUsers(token, d.ID)
+		if err != nil {
+			return nil, fmt.Errorf("user/list dept=%d: %w", d.ID, err)
+		}
+		for _, u := range ur.UserList {
+			ids := appendUniqueInts(nil, u.Department...)
+			ids = appendUniqueInts(ids, d.ID)
+			index[u.UserID] = appendUniqueInts(index[u.UserID], ids...)
+		}
+	}
+	return index, nil
 }
 
 // FormatDepartmentNames 将成员所属部门 id 列表转为可读名称。
