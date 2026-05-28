@@ -16,6 +16,9 @@ wecom/.env
 logs/
 *.log
 
+# SQLite 数据
+data/
+
 # 临时文件
 *.swp
 *.swo

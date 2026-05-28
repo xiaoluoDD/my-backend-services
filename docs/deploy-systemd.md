@@ -15,6 +15,7 @@
 ├── http/                   ← Go 源码（HTTP API）
 ├── wecom/.env              ← 密钥与配置（systemd 自动加载）
 ├── logs/http.log           ← 应用日志（LOG_DIR=logs 时）
+├── data/wecom.db           ← SQLite（成员与企业信息，DB_PATH 配置）
 └── deploy/
     ├── build.sh            ← 仅编译
     ├── install-systemd.sh  ← 首次安装 systemd
@@ -135,6 +136,23 @@ curl -s -X POST http://127.0.0.1:8081/api/wecom/test
 ```
 
 从本机 Qt 看板访问：`http://<服务器公网IP>:8081`
+
+### 8. 同步企业微信成员到 SQLite（首次建议执行）
+
+应用需在管理后台开启 **通讯录只读** 权限，否则同步可能失败。
+
+```bash
+# 触发同步（拉取应用可见范围成员并写入 data/wecom.db）
+curl -s -X POST http://127.0.0.1:8081/api/wecom/sync
+
+# 查看已保存的成员
+curl -s http://127.0.0.1:8081/api/wecom/users
+
+# 概览（人数、上次同步时间、企业 ID 等）
+curl -s http://127.0.0.1:8081/api/wecom/stats
+```
+
+数据库文件默认：`~/my-backend-services/data/wecom.db`（已在 `.gitignore` 中忽略，不会进 Git）。
 
 ---
 

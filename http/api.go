@@ -1,15 +1,19 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/xiaoluoDD/my-backend-services/internal/db"
 	"github.com/xiaoluoDD/my-backend-services/internal/logger"
 	"github.com/xiaoluoDD/my-backend-services/internal/wecom"
 )
+
+var sqlDB *sql.DB
 
 func listenAddr() string {
 	port := os.Getenv("HTTP_PORT")
@@ -27,7 +31,17 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func main() {
 	appLog := logger.Init("http")
-	appLog.Info("starting http api", "addr", listenAddr(), "log_dir", os.Getenv("LOG_DIR"))
+
+	var err error
+	sqlDB, err = db.Open("")
+	if err != nil {
+		appLog.Error("open database failed", "err", err)
+		log.Fatal(err)
+	}
+	defer sqlDB.Close()
+	appLog.Info("database ready", "path", os.Getenv("DB_PATH"))
+
+	appLog.Info("starting http api", "addr", listenAddr())
 
 	http.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("pong"))
@@ -47,12 +61,10 @@ func main() {
 		})
 	})
 
-	// 项目看板 Qt 客户端调用：触发一次企业微信测试消息
 	http.HandleFunc("/api/wecom/test", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost && r.Method != http.MethodGet {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
-				"ok":    false,
-				"error": "请使用 GET 或 POST",
+				"ok": false, "error": "请使用 GET 或 POST",
 			})
 			return
 		}
@@ -63,8 +75,7 @@ func main() {
 		if err != nil {
 			appLog.Error("wecom send failed", "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"ok":    false,
-				"error": err.Error(),
+				"ok": false, "error": err.Error(),
 			})
 			return
 		}
@@ -78,10 +89,91 @@ func main() {
 		})
 	})
 
+	// 从企业微信同步应用可见成员到 SQLite
+	http.HandleFunc("/api/wecom/sync", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost && r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+				"ok": false, "error": "请使用 GET 或 POST",
+			})
+			return
+		}
+
+		appLog.Info("wecom sync requested", "remote", r.RemoteAddr)
+		result, err := wecom.SyncUsersToDB(sqlDB)
+		if err != nil {
+			appLog.Error("wecom sync failed", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"ok":    false,
+				"error": err.Error(),
+				"sync":  result,
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ok":         true,
+			"msg":        "成员同步完成",
+			"sync":       result,
+			"server_now": time.Now().Format("2006-01-02 15:04:05"),
+		})
+	})
+
+	// 查询已持久化的成员列表
+	http.HandleFunc("/api/wecom/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+				"ok": false, "error": "请使用 GET",
+			})
+			return
+		}
+
+		users, err := db.ListActiveUsers(sqlDB)
+		if err != nil {
+			appLog.Error("list users failed", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"ok": false, "error": err.Error(),
+			})
+			return
+		}
+
+		stats, _ := db.Stats(sqlDB)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ok":    true,
+			"count": len(users),
+			"users": users,
+			"stats": stats,
+		})
+	})
+
+	// 数据库与企业信息概览
+	http.HandleFunc("/api/wecom/stats", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+				"ok": false, "error": "请使用 GET",
+			})
+			return
+		}
+
+		stats, err := db.Stats(sqlDB)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"ok": false, "error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ok":    true,
+			"stats": stats,
+		})
+	})
+
 	addr := listenAddr()
 	appLog.Info("routes ready",
 		"ping", "GET /ping",
 		"wecom_test", "GET|POST /api/wecom/test",
+		"wecom_sync", "GET|POST /api/wecom/sync",
+		"wecom_users", "GET /api/wecom/users",
+		"wecom_stats", "GET /api/wecom/stats",
 	)
 	log.Fatal(http.ListenAndServe(addr, logger.HTTPMiddleware(http.DefaultServeMux)))
 }
