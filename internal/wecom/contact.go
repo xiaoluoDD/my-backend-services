@@ -112,6 +112,32 @@ type tagGetResp struct {
 	} `json:"partylist"`
 }
 
+type userGetResp struct {
+	baseResp
+	UserID     string `json:"userid"`
+	Name       string `json:"name"`
+	Mobile     string `json:"mobile"`
+	Department []int  `json:"department"`
+}
+
+// FetchUserDetail 读取单个成员详情（用于补全姓名）。
+func FetchUserDetail(token, userid string) (*userGetResp, error) {
+	body, err := apiGET(token, "/cgi-bin/user/get", url.Values{
+		"userid": []string{userid},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var ur userGetResp
+	if err := json.Unmarshal(body, &ur); err != nil {
+		return nil, fmt.Errorf("解析 user/get: %w", err)
+	}
+	if ur.ErrCode != 0 {
+		return nil, fmt.Errorf("user/get(%s) 失败: errcode=%d errmsg=%s", userid, ur.ErrCode, ur.ErrMsg)
+	}
+	return &ur, nil
+}
+
 // FetchTagMembers 获取标签成员。
 func FetchTagMembers(token string, tagID int) (*tagGetResp, error) {
 	body, err := apiGET(token, "/cgi-bin/tag/get", url.Values{

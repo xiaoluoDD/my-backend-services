@@ -109,6 +109,8 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 		}
 	}
 
+	fillMissingNames(token, members)
+
 	now := time.Now().Format(time.RFC3339)
 	users := make([]db.AppUser, 0, len(members))
 	for _, m := range members {
@@ -136,4 +138,27 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 
 	log.Info("wecom sync ok", "run_id", runID, "user_count", len(users))
 	return finish("ok", len(users), nil)
+}
+
+func fillMissingNames(token string, members map[string]*member) {
+	log := logger.Default()
+	for userid, m := range members {
+		if m.Name != "" {
+			continue
+		}
+		detail, err := FetchUserDetail(token, userid)
+		if err != nil {
+			log.Warn("补全成员姓名失败", "userid", userid, "err", err)
+			continue
+		}
+		if detail.Name != "" {
+			m.Name = detail.Name
+		}
+		if m.Mobile == "" && detail.Mobile != "" {
+			m.Mobile = detail.Mobile
+		}
+		if len(m.Departments) == 0 && len(detail.Department) > 0 {
+			m.Departments = detail.Department
+		}
+	}
 }
