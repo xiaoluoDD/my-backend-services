@@ -26,6 +26,12 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+	filePath = absPath
+
 	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)"
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {

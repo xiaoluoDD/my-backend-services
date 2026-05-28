@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/db"
@@ -52,4 +55,49 @@ func handleDBExport(w http.ResponseWriter, r *http.Request) {
 		"projects": projects,
 		"stats":    stats,
 	})
+}
+
+func handleDBDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+			"ok": false, "error": "请使用 GET",
+		})
+		return
+	}
+
+	tmp, err := os.CreateTemp("", "wecom-backup-*.db")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	defer os.Remove(tmpPath)
+
+	if err := db.BackupToFile(sqlDB, tmpPath); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+
+	st, err := os.Stat(tmpPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+
+	name := filepath.Base(db.FilePath())
+	if name == "" || name == "." {
+		name = "wecom.db"
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", st.Size()))
+	http.ServeFile(w, r, tmpPath)
 }

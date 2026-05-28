@@ -40,7 +40,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer sqlDB.Close()
-	appLog.Info("database ready", "path", os.Getenv("DB_PATH"))
+	appLog.Info("database ready", "path", db.FilePath())
 
 	appLog.Info("starting http api", "addr", listenAddr())
 
@@ -193,6 +193,7 @@ func main() {
 
 	http.HandleFunc("/api/projects", handleProjects)
 	http.HandleFunc("/api/db/export", handleDBExport)
+	http.HandleFunc("/api/db/download", handleDBDownload)
 	http.HandleFunc("/api/wecom/send-group", handleWecomSendGroup)
 
 	http.HandleFunc("/api/logs", handleLogList)
@@ -207,6 +208,7 @@ func main() {
 		"wecom_stats", "GET /api/wecom/stats",
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"db_export", "GET /api/db/export",
+		"db_download", "GET /api/db/download",
 		"wecom_send_group", "POST /api/wecom/send-group",
 		"logs", "GET /api/logs",
 		"logs_download", "GET /api/logs/download?name=",
