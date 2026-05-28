@@ -67,11 +67,27 @@ func migrate(db *sql.DB) error {
 			updated_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_app_users_active ON app_users(active)`,
+		`CREATE TABLE IF NOT EXISTS projects (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			year TEXT NOT NULL DEFAULT '',
+			work_no TEXT NOT NULL DEFAULT '',
+			name TEXT NOT NULL DEFAULT '',
+			manager_userid TEXT NOT NULL DEFAULT '',
+			manager_name TEXT NOT NULL DEFAULT '',
+			group_chat TEXT NOT NULL DEFAULT '',
+			group_chat_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			start_date TEXT NOT NULL DEFAULT '',
+			end_date TEXT NOT NULL DEFAULT '',
+			tasks TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_projects_year ON projects(year)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
 			return fmt.Errorf("migrate: %w", err)
 		}
 	}
-	return nil
+	return seedProjectsIfEmpty(db)
 }
