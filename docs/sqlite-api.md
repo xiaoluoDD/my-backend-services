@@ -4,7 +4,7 @@
 
 | 表 | 内容 |
 |----|------|
-| `app_users` | 自建应用**可见范围内**的成员（userid、姓名、手机、部门、来源） |
+| `app_users` | 自建应用**可见范围内**的成员（userid、姓名、手机、**部门名称**、来源） |
 | `sync_runs` | 每次同步的开始/结束时间、状态、人数、错误信息 |
 | `corp_info` | 企业 ID、AgentId 等配置快照 |
 
@@ -37,8 +37,9 @@
 1. `agent/get` 读取应用可见范围（成员、部门、标签）
 2. 对部门调用 `user/list` 展开成员
 3. 对标签调用 `tag/get` 展开成员与部门
-4. 按 `userid` 去重后写入 `app_users`
-5. 本次未出现的旧成员标记为 `active=0`
+4. 调用 `department/list` 将部门 id 解析为名称，与 `user/get` 补全的部门一并写入 `departments` 字段
+5. 按 `userid` 去重后写入 `app_users`
+6. 本次未出现的旧成员标记为 `active=0`
 
 ## 备份
 

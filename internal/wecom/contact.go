@@ -178,13 +178,57 @@ func joinSources(sources []string) string {
 	return strings.Join(sources, ",")
 }
 
-func joinDepartments(depts []int) string {
+type departmentListResp struct {
+	baseResp
+	Department []struct {
+		ID       int    `json:"id"`
+		Name     string `json:"name"`
+		ParentID int    `json:"parentid"`
+	} `json:"department"`
+}
+
+// FetchDepartmentList 拉取企业部门 id→名称（需「通讯录-部门信息只读」权限）。
+func FetchDepartmentList(token string) (map[int]string, error) {
+	body, err := apiGET(token, "/cgi-bin/department/list", nil)
+	if err != nil {
+		return nil, err
+	}
+	var dr departmentListResp
+	if err := json.Unmarshal(body, &dr); err != nil {
+		return nil, fmt.Errorf("解析 department/list: %w", err)
+	}
+	if dr.ErrCode != 0 {
+		return nil, fmt.Errorf("department/list 失败: errcode=%d errmsg=%s", dr.ErrCode, dr.ErrMsg)
+	}
+	out := make(map[int]string, len(dr.Department))
+	for _, d := range dr.Department {
+		if d.ID > 0 && d.Name != "" {
+			out[d.ID] = d.Name
+		}
+	}
+	return out, nil
+}
+
+// FormatDepartmentNames 将成员所属部门 id 列表转为可读名称。
+func FormatDepartmentNames(depts []int, names map[int]string) string {
 	if len(depts) == 0 {
-		return "[]"
+		return ""
 	}
-	parts := make([]string, len(depts))
-	for i, d := range depts {
-		parts[i] = strconv.Itoa(d)
+	seen := make(map[int]struct{}, len(depts))
+	parts := make([]string, 0, len(depts))
+	for _, id := range depts {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		if name, ok := names[id]; ok && name != "" {
+			parts = append(parts, name)
+		} else {
+			parts = append(parts, fmt.Sprintf("部门#%d", id))
+		}
 	}
-	return "[" + strings.Join(parts, ",") + "]"
+	return strings.Join(parts, "、")
 }

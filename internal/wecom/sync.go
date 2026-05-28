@@ -111,6 +111,12 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 
 	fillMissingNames(token, members)
 
+	deptNames, err := FetchDepartmentList(token)
+	if err != nil {
+		log.Warn("拉取部门列表失败，部门将显示为 ID", "err", err)
+		deptNames = map[int]string{}
+	}
+
 	now := time.Now().Format(time.RFC3339)
 	users := make([]db.AppUser, 0, len(members))
 	for _, m := range members {
@@ -118,7 +124,7 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 			UserID:      m.UserID,
 			Name:        m.Name,
 			Mobile:      m.Mobile,
-			Departments: joinDepartments(m.Departments),
+			Departments: FormatDepartmentNames(m.Departments, deptNames),
 			Sources:     joinSources(m.Sources),
 			UpdatedAt:   now,
 		})
