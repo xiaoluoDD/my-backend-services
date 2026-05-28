@@ -191,6 +191,9 @@ func main() {
 		})
 	})
 
+	http.HandleFunc("/api/logs", handleLogList)
+	http.HandleFunc("/api/logs/download", handleLogDownload)
+
 	addr := listenAddr()
 	appLog.Info("routes ready",
 		"ping", "GET /ping",
@@ -198,6 +201,8 @@ func main() {
 		"wecom_sync", "GET|POST /api/wecom/sync",
 		"wecom_users", "GET /api/wecom/users",
 		"wecom_stats", "GET /api/wecom/stats",
+		"logs", "GET /api/logs",
+		"logs_download", "GET /api/logs/download?name=",
 	)
 	log.Fatal(http.ListenAndServe(addr, logger.HTTPMiddleware(http.DefaultServeMux)))
 }

@@ -18,6 +18,8 @@
 | POST/GET | `/api/wecom/sync` | 从企业微信拉取成员并写入数据库 |
 | GET | `/api/wecom/users` | 返回已保存的成员列表 |
 | GET | `/api/wecom/stats` | 人数、上次同步、`corp_info` |
+| GET | `/api/logs` | 后端 `logs/` 目录下日志文件列表 |
+| GET | `/api/logs/download?name=xxx.log` | 下载指定日志文件 |
 
 ## 权限要求
 
