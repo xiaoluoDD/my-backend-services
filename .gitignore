@@ -11,6 +11,10 @@ http/api.exe
 .env
 wecom/.env
 
+# 运行日志
+logs/
+*.log
+
 # 临时文件
 *.swp
 *.swo

@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/xiaoluoDD/my-backend-services/internal/logger"
 )
 
 type Config struct {
@@ -66,6 +68,9 @@ func LoadConfig() (Config, error) {
 }
 
 func getToken(cfg Config) (string, error) {
+	log := logger.Default()
+	log.Debug("wecom gettoken start", "corp_id", cfg.CorpID, "agent_id", cfg.AgentID)
+
 	url := fmt.Sprintf(
 		"https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=%s&corpsecret=%s",
 		cfg.CorpID, cfg.Secret,
@@ -73,29 +78,41 @@ func getToken(cfg Config) (string, error) {
 
 	resp, err := http.Get(url)
 	if err != nil {
+		log.Error("wecom gettoken request failed", "err", err)
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Error("wecom gettoken read body failed", "err", err)
 		return "", err
 	}
 
 	var tr tokenResp
 	if err := json.Unmarshal(body, &tr); err != nil {
+		log.Error("wecom gettoken parse failed", "err", err, "body_len", len(body))
 		return "", fmt.Errorf("解析 token 响应失败: %w", err)
 	}
 
 	if tr.ErrCode != 0 {
+		log.Error("wecom gettoken api error", "errcode", tr.ErrCode, "errmsg", tr.ErrMsg)
 		return "", fmt.Errorf("gettoken 失败: errcode=%d errmsg=%s", tr.ErrCode, tr.ErrMsg)
 	}
 
+	log.Debug("wecom gettoken ok", "expires_in", tr.ExpiresIn)
 	return tr.AccessToken, nil
 }
 
 // SendText 向配置的成员发送文本消息。
 func SendText(cfg Config, content string) (msgID string, err error) {
+	log := logger.Default()
+	log.Info("wecom send text",
+		"to_user", cfg.ToUser,
+		"agent_id", cfg.AgentID,
+		"content_len", len(content),
+	)
+
 	token, err := getToken(cfg)
 	if err != nil {
 		return "", err
@@ -116,24 +133,29 @@ func SendText(cfg Config, content string) (msgID string, err error) {
 
 	resp, err := http.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
+		log.Error("wecom send request failed", "err", err)
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Error("wecom send read body failed", "err", err)
 		return "", err
 	}
 
 	var sr apiResp
 	if err := json.Unmarshal(body, &sr); err != nil {
+		log.Error("wecom send parse failed", "err", err, "body", string(body))
 		return "", fmt.Errorf("解析发送响应失败: %w, body=%s", err, body)
 	}
 
 	if sr.ErrCode != 0 {
+		log.Error("wecom send api error", "errcode", sr.ErrCode, "errmsg", sr.ErrMsg)
 		return "", fmt.Errorf("发送失败: errcode=%d errmsg=%s", sr.ErrCode, sr.ErrMsg)
 	}
 
+	log.Info("wecom send ok", "msgid", sr.MsgID)
 	return sr.MsgID, nil
 }
 
@@ -141,6 +163,7 @@ func SendText(cfg Config, content string) (msgID string, err error) {
 func SendTest() (msgID string, err error) {
 	cfg, err := LoadConfig()
 	if err != nil {
+		logger.Default().Error("wecom load config failed", "err", err)
 		return "", err
 	}
 

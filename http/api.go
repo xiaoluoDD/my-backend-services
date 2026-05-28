@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/xiaoluoDD/my-backend-services/internal/logger"
 	"github.com/xiaoluoDD/my-backend-services/internal/wecom"
 )
 
@@ -25,6 +26,9 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 func main() {
+	appLog := logger.Init("http")
+	appLog.Info("starting http api", "addr", listenAddr(), "log_dir", os.Getenv("LOG_DIR"))
+
 	http.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("pong"))
 	})
@@ -34,7 +38,7 @@ func main() {
 		if msg == "" {
 			msg = "(empty)"
 		}
-		log.Printf("/say msg=%q\n", msg)
+		appLog.Debug("say", "msg", msg)
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"ok":         true,
@@ -53,11 +57,11 @@ func main() {
 			return
 		}
 
-		log.Printf("/api/wecom/test from %s\n", r.RemoteAddr)
+		appLog.Info("wecom test requested", "remote", r.RemoteAddr)
 
 		msgID, err := wecom.SendTest()
 		if err != nil {
-			log.Printf("wecom send failed: %v\n", err)
+			appLog.Error("wecom send failed", "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"ok":    false,
 				"error": err.Error(),
@@ -65,6 +69,7 @@ func main() {
 			return
 		}
 
+		appLog.Info("wecom test sent", "msgid", msgID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"ok":         true,
 			"msg":        "企业微信测试消息已发送",
@@ -74,7 +79,9 @@ func main() {
 	})
 
 	addr := listenAddr()
-	log.Printf("HTTP API listening on %s\n", addr)
-	log.Printf("  GET/POST http://<host>%s/api/wecom/test  — 发送企业微信测试\n", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	appLog.Info("routes ready",
+		"ping", "GET /ping",
+		"wecom_test", "GET|POST /api/wecom/test",
+	)
+	log.Fatal(http.ListenAndServe(addr, logger.HTTPMiddleware(http.DefaultServeMux)))
 }
