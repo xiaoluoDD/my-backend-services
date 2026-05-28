@@ -14,6 +14,7 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| POST/GET | `/api/wecom/test` | 发送测试消息；POST body: `{"userid":"成员ID"}` |
 | POST/GET | `/api/wecom/sync` | 从企业微信拉取成员并写入数据库 |
 | GET | `/api/wecom/users` | 返回已保存的成员列表 |
 | GET | `/api/wecom/stats` | 人数、上次同步、`corp_info` |

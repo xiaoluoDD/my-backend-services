@@ -48,9 +48,9 @@ func LoadConfig() (Config, error) {
 	toUser := os.Getenv("WECOM_TO_USER")
 	agentStr := os.Getenv("WECOM_AGENT_ID")
 
-	if corpID == "" || secret == "" || toUser == "" || agentStr == "" {
+	if corpID == "" || secret == "" || agentStr == "" {
 		return Config{}, fmt.Errorf(
-			"缺少环境变量 WECOM_CORP_ID、WECOM_SECRET、WECOM_AGENT_ID、WECOM_TO_USER",
+			"缺少环境变量 WECOM_CORP_ID、WECOM_SECRET、WECOM_AGENT_ID",
 		)
 	}
 
@@ -104,11 +104,18 @@ func getToken(cfg Config) (string, error) {
 	return tr.AccessToken, nil
 }
 
-// SendText 向配置的成员发送文本消息。
-func SendText(cfg Config, content string) (msgID string, err error) {
+// SendText 向指定成员发送文本消息。toUser 为空时使用配置中的 WECOM_TO_USER。
+func SendText(cfg Config, toUser, content string) (msgID string, err error) {
+	if toUser == "" {
+		toUser = cfg.ToUser
+	}
+	if toUser == "" {
+		return "", fmt.Errorf("未指定接收人 userid")
+	}
+
 	log := logger.Default()
 	log.Info("wecom send text",
-		"to_user", cfg.ToUser,
+		"to_user", toUser,
 		"agent_id", cfg.AgentID,
 		"content_len", len(content),
 	)
@@ -121,7 +128,7 @@ func SendText(cfg Config, content string) (msgID string, err error) {
 	url := "https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=" + token
 
 	var req sendReq
-	req.ToUser = cfg.ToUser
+	req.ToUser = toUser
 	req.MsgType = "text"
 	req.AgentID = cfg.AgentID
 	req.Text.Content = content
@@ -159,8 +166,8 @@ func SendText(cfg Config, content string) (msgID string, err error) {
 	return sr.MsgID, nil
 }
 
-// SendTest 发送默认测试文案。
-func SendTest() (msgID string, err error) {
+// SendTest 向指定成员发送默认测试文案。toUser 为空时使用 WECOM_TO_USER。
+func SendTest(toUser string) (msgID string, err error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		logger.Default().Error("wecom load config failed", "err", err)
@@ -168,5 +175,5 @@ func SendTest() (msgID string, err error) {
 	}
 
 	content := "📢 项目提醒测试（来自项目看板）\n时间：" + time.Now().Format("2006-01-02 15:04:05")
-	return SendText(cfg, content)
+	return SendText(cfg, toUser, content)
 }

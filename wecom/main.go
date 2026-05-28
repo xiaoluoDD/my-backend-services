@@ -11,7 +11,7 @@ func main() {
 	log := logger.Init("wecom")
 	log.Info("cli test send starting")
 
-	msgID, err := wecom.SendTest()
+	msgID, err := wecom.SendTest("")
 	if err != nil {
 		log.Error("cli test send failed", "err", err)
 		os.Exit(1)

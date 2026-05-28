@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -69,22 +70,45 @@ func main() {
 			return
 		}
 
-		appLog.Info("wecom test requested", "remote", r.RemoteAddr)
+		userid := r.URL.Query().Get("userid")
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			if len(body) > 0 {
+				var req struct {
+					UserID string `json:"userid"`
+					Name   string `json:"name"`
+				}
+				if err := json.Unmarshal(body, &req); err == nil && req.UserID != "" {
+					userid = req.UserID
+				}
+			}
+		}
 
-		msgID, err := wecom.SendTest()
+		if userid == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"ok":    false,
+				"error": "请指定 userid（JSON: {\"userid\":\"xxx\"} 或查询参数 ?userid=xxx）",
+			})
+			return
+		}
+
+		appLog.Info("wecom test requested", "remote", r.RemoteAddr, "userid", userid)
+
+		msgID, err := wecom.SendTest(userid)
 		if err != nil {
-			appLog.Error("wecom send failed", "err", err)
+			appLog.Error("wecom send failed", "err", err, "userid", userid)
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"ok": false, "error": err.Error(),
 			})
 			return
 		}
 
-		appLog.Info("wecom test sent", "msgid", msgID)
+		appLog.Info("wecom test sent", "msgid", msgID, "userid", userid)
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"ok":         true,
 			"msg":        "企业微信测试消息已发送",
 			"msgid":      msgID,
+			"to_user":    userid,
 			"server_now": time.Now().Format("2006-01-02 15:04:05"),
 		})
 	})
