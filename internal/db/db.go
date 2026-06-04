@@ -102,6 +102,22 @@ func migrate(db *sql.DB) error {
 			name TEXT NOT NULL UNIQUE COLLATE NOCASE,
 			updated_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS project_subtasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id INTEGER NOT NULL,
+			content TEXT NOT NULL DEFAULT '',
+			owner_userid TEXT NOT NULL DEFAULT '',
+			owner_name TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			planned_start_date TEXT NOT NULL DEFAULT '',
+			actual_start_date TEXT NOT NULL DEFAULT '',
+			planned_end_date TEXT NOT NULL DEFAULT '',
+			actual_end_date TEXT NOT NULL DEFAULT '',
+			remark TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_project_subtasks_project ON project_subtasks(project_id)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {

@@ -7,14 +7,20 @@ import (
 
 // ProjectMember 项目关联的一名成员。
 type ProjectMember struct {
-	UserID string `json:"userid"`
-	Name   string `json:"name"`
+	UserID         string `json:"userid"`
+	Name           string `json:"name"`
+	DepartmentName string `json:"department_name,omitempty"`
 }
 
-// ListProjectMembers 返回项目成员列表。
+// ListProjectMembers 返回项目成员列表（含部门名称）。
 func ListProjectMembers(db *sql.DB, projectID int64) ([]ProjectMember, error) {
 	rows, err := db.Query(
-		`SELECT userid, name FROM project_members WHERE project_id=? ORDER BY name, userid`,
+		`SELECT pm.userid, pm.name, COALESCE(d.name, u.departments, '')
+		 FROM project_members pm
+		 LEFT JOIN app_users u ON pm.userid = u.userid
+		 LEFT JOIN departments d ON u.department_id = d.id
+		 WHERE pm.project_id=?
+		 ORDER BY pm.name, pm.userid`,
 		projectID,
 	)
 	if err != nil {
@@ -25,7 +31,7 @@ func ListProjectMembers(db *sql.DB, projectID int64) ([]ProjectMember, error) {
 	var list []ProjectMember
 	for rows.Next() {
 		var m ProjectMember
-		if err := rows.Scan(&m.UserID, &m.Name); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Name, &m.DepartmentName); err != nil {
 			return nil, err
 		}
 		list = append(list, m)
