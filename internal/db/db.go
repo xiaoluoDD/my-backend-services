@@ -89,6 +89,14 @@ func migrate(db *sql.DB) error {
 			updated_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_projects_year ON projects(year)`,
+		`CREATE TABLE IF NOT EXISTS project_members (
+			project_id INTEGER NOT NULL,
+			userid TEXT NOT NULL,
+			name TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (project_id, userid),
+			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_project_members_userid ON project_members(userid)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {

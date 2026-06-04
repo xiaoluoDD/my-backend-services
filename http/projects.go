@@ -10,18 +10,24 @@ import (
 )
 
 type projectPayload struct {
-	ID            int64  `json:"id"`
-	Year          string `json:"year"`
-	WorkNo        string `json:"work_no"`
-	Name          string `json:"name"`
-	ManagerUserID string `json:"manager_userid"`
-	ManagerName   string `json:"manager_name"`
-	GroupChat     string `json:"group_chat"`
-	GroupChatID   string `json:"group_chat_id"`
-	Status        string `json:"status"`
-	StartDate     string `json:"start_date"`
-	EndDate       string `json:"end_date"`
-	Tasks         string `json:"tasks"`
+	ID            int64              `json:"id"`
+	Year          string             `json:"year"`
+	WorkNo        string             `json:"work_no"`
+	Name          string             `json:"name"`
+	ManagerUserID string             `json:"manager_userid"`
+	ManagerName   string             `json:"manager_name"`
+	GroupChat     string             `json:"group_chat"`
+	GroupChatID   string             `json:"group_chat_id"`
+	Status        string             `json:"status"`
+	StartDate     string             `json:"start_date"`
+	EndDate       string             `json:"end_date"`
+	Tasks         string             `json:"tasks"`
+	Members       []db.ProjectMember `json:"members"`
+}
+
+type projectView struct {
+	db.Project
+	Members []db.ProjectMember `json:"members"`
 }
 
 func (p projectPayload) toModel() db.Project {
@@ -41,6 +47,13 @@ func (p projectPayload) toModel() db.Project {
 	}
 }
 
+func projectToView(p db.Project, members []db.ProjectMember) projectView {
+	if members == nil {
+		members = []db.ProjectMember{}
+	}
+	return projectView{Project: p, Members: members}
+}
+
 func decodeProjectPayload(r *http.Request) (projectPayload, error) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -52,6 +65,18 @@ func decodeProjectPayload(r *http.Request) (projectPayload, error) {
 	}
 	err = json.Unmarshal(body, &p)
 	return p, err
+}
+
+func loadProjectView(id int64) (projectView, error) {
+	p, err := db.GetProject(sqlDB, id)
+	if err != nil {
+		return projectView{}, err
+	}
+	members, err := db.ListProjectMembers(sqlDB, id)
+	if err != nil {
+		return projectView{}, err
+	}
+	return projectToView(p, members), nil
 }
 
 func handleProjects(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +104,21 @@ func listProjects(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	views := make([]projectView, 0, len(projects))
+	for _, p := range projects {
+		members, err := db.ListProjectMembers(sqlDB, p.ID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"ok": false, "error": err.Error(),
+			})
+			return
+		}
+		views = append(views, projectToView(p, members))
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok": true, "count": len(projects), "projects": projects,
+		"ok": true, "count": len(views), "projects": views,
 	})
 }
 
@@ -107,7 +145,14 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, _ := db.GetProject(sqlDB, id)
+	if err := db.ReplaceProjectMembers(sqlDB, id, p.Members); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+
+	created, _ := loadProjectView(id)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "项目已创建", "project": created,
 	})
@@ -135,7 +180,14 @@ func updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, _ := db.GetProject(sqlDB, p.ID)
+	if err := db.ReplaceProjectMembers(sqlDB, p.ID, p.Members); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+
+	updated, _ := loadProjectView(p.ID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "项目已更新", "project": updated,
 	})

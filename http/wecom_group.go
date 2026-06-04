@@ -2,10 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/db"
 	"github.com/xiaoluoDD/my-backend-services/internal/wecom"
@@ -53,14 +51,10 @@ func handleWecomSendGroup(w http.ResponseWriter, r *http.Request) {
 
 	content := req.Content
 	if content == "" && project.ID > 0 {
-		content = fmt.Sprintf(
-			"📢 项目提醒【%s】\n工番号：%s\n状态：%s\n负责人：%s\n时间：%s",
-			project.Name, project.WorkNo, project.Status, project.ManagerName,
-			time.Now().Format("2006-01-02 15:04:05"),
-		)
+		content = wecom.FormatProjectReminder(project, "")
 	}
 	if content == "" {
-		content = "📢 项目提醒（来自项目看板）\n时间：" + time.Now().Format("2006-01-02 15:04:05")
+		content = "📢 项目提醒（来自项目看板）"
 	}
 
 	if err := wecom.SendAppChatText(chatid, content); err != nil {

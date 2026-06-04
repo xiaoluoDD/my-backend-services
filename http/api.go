@@ -195,6 +195,7 @@ func main() {
 	http.HandleFunc("/api/db/export", handleDBExport)
 	http.HandleFunc("/api/db/download", handleDBDownload)
 	http.HandleFunc("/api/wecom/send-group", handleWecomSendGroup)
+	http.HandleFunc("/api/wecom/notify-project", handleWecomNotifyProject)
 
 	http.HandleFunc("/api/logs", handleLogList)
 	http.HandleFunc("/api/logs/download", handleLogDownload)
@@ -210,6 +211,7 @@ func main() {
 		"db_export", "GET /api/db/export",
 		"db_download", "GET /api/db/download",
 		"wecom_send_group", "POST /api/wecom/send-group",
+		"wecom_notify_project", "POST /api/wecom/notify-project",
 		"logs", "GET /api/logs",
 		"logs_download", "GET /api/logs/download?name=",
 	)

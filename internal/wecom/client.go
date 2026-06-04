@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/logger"
@@ -102,6 +103,27 @@ func getToken(cfg Config) (string, error) {
 
 	log.Debug("wecom gettoken ok", "expires_in", tr.ExpiresIn)
 	return tr.AccessToken, nil
+}
+
+// SendTextToUsers 向多名成员发送同一条文本（userid 以 | 分隔）。
+func SendTextToUsers(cfg Config, userids []string, content string) (msgID string, err error) {
+	seen := make(map[string]struct{})
+	parts := make([]string, 0, len(userids))
+	for _, id := range userids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		parts = append(parts, id)
+	}
+	if len(parts) == 0 {
+		return "", fmt.Errorf("未指定接收人 userid")
+	}
+	return SendText(cfg, strings.Join(parts, "|"), content)
 }
 
 // SendText 向指定成员发送文本消息。toUser 为空时使用配置中的 WECOM_TO_USER。
