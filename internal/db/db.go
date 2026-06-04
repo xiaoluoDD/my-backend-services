@@ -97,11 +97,44 @@ func migrate(db *sql.DB) error {
 			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_project_members_userid ON project_members(userid)`,
+		`CREATE TABLE IF NOT EXISTS departments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+			updated_at TEXT NOT NULL
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
 			return fmt.Errorf("migrate: %w", err)
 		}
 	}
+	if err := ensureColumn(db, "app_users", "department_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	return seedProjectsIfEmpty(db)
+}
+
+func ensureColumn(db *sql.DB, table, column, def string) error {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	_, err = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, def))
+	if err != nil {
+		return fmt.Errorf("add column %s.%s: %w", table, column, err)
+	}
+	return nil
 }

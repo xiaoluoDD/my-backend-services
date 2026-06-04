@@ -8,12 +8,14 @@ import (
 
 // AppUser 应用可见范围内的成员（持久化）。
 type AppUser struct {
-	UserID      string `json:"userid"`
-	Name        string `json:"name"`
-	Mobile      string `json:"mobile,omitempty"`
-	Departments string `json:"departments"`
-	Sources     string `json:"sources"`
-	UpdatedAt   string `json:"updated_at"`
+	UserID         string `json:"userid"`
+	Name           string `json:"name"`
+	Mobile         string `json:"mobile,omitempty"`
+	Departments    string `json:"departments"`
+	DepartmentID   int64  `json:"department_id,omitempty"`
+	DepartmentName string `json:"department_name,omitempty"`
+	Sources        string `json:"sources"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 // SyncRun 一次同步任务记录。
@@ -120,12 +122,12 @@ func ReplaceAppUsers(db *sql.DB, users []AppUser) error {
 	}
 
 	stmt, err := tx.Prepare(
-		`INSERT INTO app_users (userid, name, mobile, departments, sources, active, updated_at)
-		 VALUES (?, ?, ?, ?, ?, 1, ?)
+		`INSERT INTO app_users (userid, name, mobile, departments, department_id, sources, active, updated_at)
+		 VALUES (?, ?, ?, ?, 0, ?, 1, ?)
 		 ON CONFLICT(userid) DO UPDATE SET
 		   name=excluded.name,
-		   mobile=excluded.mobile,
-		   departments=excluded.departments,
+		   mobile=CASE WHEN excluded.mobile != '' THEN excluded.mobile ELSE app_users.mobile END,
+		   departments=CASE WHEN app_users.department_id > 0 THEN app_users.departments ELSE excluded.departments END,
 		   sources=excluded.sources,
 		   active=1,
 		   updated_at=excluded.updated_at`,
@@ -150,23 +152,85 @@ func ReplaceAppUsers(db *sql.DB, users []AppUser) error {
 // ListActiveUsers 列出当前有效成员。
 func ListActiveUsers(db *sql.DB) ([]AppUser, error) {
 	rows, err := db.Query(
-		`SELECT userid, name, mobile, departments, sources, updated_at
-		 FROM app_users WHERE active=1 ORDER BY name, userid`,
+		`SELECT u.userid, u.name, u.mobile, u.departments, u.department_id,
+		        COALESCE(d.name, ''), u.sources, u.updated_at
+		 FROM app_users u
+		 LEFT JOIN departments d ON u.department_id = d.id
+		 WHERE u.active=1
+		 ORDER BY u.name, u.userid`,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanAppUsers(rows)
+}
 
+func scanAppUsers(rows *sql.Rows) ([]AppUser, error) {
 	var list []AppUser
 	for rows.Next() {
 		var u AppUser
-		if err := rows.Scan(&u.UserID, &u.Name, &u.Mobile, &u.Departments, &u.Sources, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&u.UserID, &u.Name, &u.Mobile, &u.Departments, &u.DepartmentID,
+			&u.DepartmentName, &u.Sources, &u.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		list = append(list, u)
 	}
 	return list, rows.Err()
+}
+
+// GetAppUser 按 userid 查询成员。
+func GetAppUser(db *sql.DB, userid string) (AppUser, error) {
+	row := db.QueryRow(
+		`SELECT u.userid, u.name, u.mobile, u.departments, u.department_id,
+		        COALESCE(d.name, ''), u.sources, u.updated_at
+		 FROM app_users u
+		 LEFT JOIN departments d ON u.department_id = d.id
+		 WHERE u.userid=? AND u.active=1`,
+		userid,
+	)
+	var u AppUser
+	err := row.Scan(
+		&u.UserID, &u.Name, &u.Mobile, &u.Departments, &u.DepartmentID,
+		&u.DepartmentName, &u.Sources, &u.UpdatedAt,
+	)
+	return u, err
+}
+
+// UpdateAppUser 更新成员手机号与部门（手动维护字段）。
+func UpdateAppUser(db *sql.DB, userid, mobile string, departmentID int64) (AppUser, error) {
+	if userid == "" {
+		return AppUser{}, fmt.Errorf("userid 不能为空")
+	}
+
+	deptName := ""
+	if departmentID > 0 {
+		d, err := GetDepartment(db, departmentID)
+		if err != nil {
+			return AppUser{}, fmt.Errorf("部门不存在")
+		}
+		deptName = d.Name
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	res, err := db.Exec(
+		`UPDATE app_users SET mobile=?, department_id=?, departments=?, updated_at=?
+		 WHERE userid=? AND active=1`,
+		mobile, departmentID, deptName, now, userid,
+	)
+	if err != nil {
+		return AppUser{}, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return AppUser{}, err
+	}
+	if n == 0 {
+		return AppUser{}, sql.ErrNoRows
+	}
+	return GetAppUser(db, userid)
 }
 
 // CountActiveUsers 统计有效成员数。

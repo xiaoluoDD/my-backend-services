@@ -142,32 +142,8 @@ func main() {
 		})
 	})
 
-	// 查询已持久化的成员列表
-	http.HandleFunc("/api/wecom/users", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
-				"ok": false, "error": "请使用 GET",
-			})
-			return
-		}
-
-		users, err := db.ListActiveUsers(sqlDB)
-		if err != nil {
-			appLog.Error("list users failed", "err", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-				"ok": false, "error": err.Error(),
-			})
-			return
-		}
-
-		stats, _ := db.Stats(sqlDB)
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"ok":    true,
-			"count": len(users),
-			"users": users,
-			"stats": stats,
-		})
-	})
+	// 查询已持久化的成员列表 / 更新成员信息
+	http.HandleFunc("/api/wecom/users", handleWecomUsers)
 
 	// 数据库与企业信息概览
 	http.HandleFunc("/api/wecom/stats", func(w http.ResponseWriter, r *http.Request) {
@@ -192,6 +168,7 @@ func main() {
 	})
 
 	http.HandleFunc("/api/projects", handleProjects)
+	http.HandleFunc("/api/departments", handleDepartments)
 	http.HandleFunc("/api/db/export", handleDBExport)
 	http.HandleFunc("/api/db/download", handleDBDownload)
 	http.HandleFunc("/api/wecom/send-group", handleWecomSendGroup)
@@ -205,7 +182,8 @@ func main() {
 		"ping", "GET /ping",
 		"wecom_test", "GET|POST /api/wecom/test",
 		"wecom_sync", "GET|POST /api/wecom/sync",
-		"wecom_users", "GET /api/wecom/users",
+		"wecom_users", "GET|PUT /api/wecom/users",
+		"departments", "GET|POST|PUT|DELETE /api/departments",
 		"wecom_stats", "GET /api/wecom/stats",
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"db_export", "GET /api/db/export",
