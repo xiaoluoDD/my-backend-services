@@ -27,7 +27,8 @@ type projectPayload struct {
 
 type projectView struct {
 	db.Project
-	Members []db.ProjectMember `json:"members"`
+	Members     []db.ProjectMember `json:"members"`
+	TaskSummary string             `json:"task_summary"`
 }
 
 func (p projectPayload) toModel() db.Project {
@@ -47,11 +48,11 @@ func (p projectPayload) toModel() db.Project {
 	}
 }
 
-func projectToView(p db.Project, members []db.ProjectMember) projectView {
+func projectToView(p db.Project, members []db.ProjectMember, taskSummary string) projectView {
 	if members == nil {
 		members = []db.ProjectMember{}
 	}
-	return projectView{Project: p, Members: members}
+	return projectView{Project: p, Members: members, TaskSummary: taskSummary}
 }
 
 func decodeProjectPayload(r *http.Request) (projectPayload, error) {
@@ -76,7 +77,11 @@ func loadProjectView(id int64) (projectView, error) {
 	if err != nil {
 		return projectView{}, err
 	}
-	return projectToView(p, members), nil
+	taskSummary, err := db.SummarizeProjectSubtasks(sqlDB, id)
+	if err != nil {
+		return projectView{}, err
+	}
+	return projectToView(p, members, taskSummary), nil
 }
 
 func handleProjects(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +133,13 @@ func listProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	views := make([]projectView, 0, len(projects))
+	taskSummaries, err := db.SummarizeAllProjectSubtasks(sqlDB)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	for _, p := range projects {
 		members, err := db.ListProjectMembers(sqlDB, p.ID)
 		if err != nil {
@@ -136,7 +148,7 @@ func listProjects(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		views = append(views, projectToView(p, members))
+		views = append(views, projectToView(p, members, taskSummaries[p.ID]))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{

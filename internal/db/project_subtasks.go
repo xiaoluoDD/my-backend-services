@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -149,4 +150,46 @@ func DeleteProjectSubtask(db *sql.DB, id int64) error {
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// SummarizeAllProjectSubtasks 按项目汇总子任务内容（多条以「；」连接）。
+func SummarizeAllProjectSubtasks(db *sql.DB) (map[int64]string, error) {
+	rows, err := db.Query(
+		`SELECT project_id, content
+		 FROM project_subtasks
+		 WHERE content <> ''
+		 ORDER BY project_id, id`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[int64]string)
+	for rows.Next() {
+		var projectID int64
+		var content string
+		if err := rows.Scan(&projectID, &content); err != nil {
+			return nil, err
+		}
+		content = strings.TrimSpace(content)
+		if content == "" {
+			continue
+		}
+		if prev, ok := out[projectID]; ok && prev != "" {
+			out[projectID] = prev + "；" + content
+		} else {
+			out[projectID] = content
+		}
+	}
+	return out, rows.Err()
+}
+
+// SummarizeProjectSubtasks 返回单个项目的子任务内容汇总。
+func SummarizeProjectSubtasks(db *sql.DB, projectID int64) (string, error) {
+	all, err := SummarizeAllProjectSubtasks(db)
+	if err != nil {
+		return "", err
+	}
+	return all[projectID], nil
 }
