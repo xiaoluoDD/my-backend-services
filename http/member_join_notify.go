@@ -1,36 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"sync"
-	"time"
+	"log/slog"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/db"
 	"github.com/xiaoluoDD/my-backend-services/internal/wecom"
 )
-
-const joinNotifyDebounce = 3 * time.Second
-
-type pendingJoinNotify struct {
-	project  db.Project
-	stats    db.ProjectSubtaskStats
-	member   db.ProjectMember
-	subtasks []wecom.JoinSubtaskBrief
-	timer    *time.Timer
-}
-
-type joinNotifyCoordinator struct {
-	mu      sync.Mutex
-	pending map[string]*pendingJoinNotify
-}
-
-var memberJoinCoordinator = &joinNotifyCoordinator{
-	pending: make(map[string]*pendingJoinNotify),
-}
-
-func joinNotifyKey(projectID int64, userID string) string {
-	return fmt.Sprintf("%d:%s", projectID, userID)
-}
 
 func addedProjectMembers(before, after []db.ProjectMember) []db.ProjectMember {
 	beforeSet := memberUserIDSet(before)
@@ -81,138 +56,72 @@ func loadProjectJoinContext(projectID int64) (db.Project, db.ProjectSubtaskStats
 
 func notifyNewExplicitProjectMembers(projectID int64, added []db.ProjectMember) {
 	if len(added) == 0 {
+		slog.Info("member join notify skipped", "project_id", projectID, "reason", "no_new_members")
 		return
 	}
+
 	project, stats, err := loadProjectJoinContext(projectID)
 	if err != nil {
+		slog.Warn("member join notify skipped", "project_id", projectID, "err", err)
 		return
 	}
+
+	sent := 0
+	skipped := 0
 	for _, member := range added {
 		if shouldSkipJoinNotify(project, member) {
+			skipped++
+			slog.Info("member join notify skip recipient",
+				"project_id", projectID,
+				"userid", member.UserID,
+				"reason", "manager_or_empty",
+			)
 			continue
 		}
-		memberJoinCoordinator.scheduleProjectJoin(project, stats, member)
+		content := wecom.FormatMemberJoinProject(project, stats)
+		wecom.NotifyMemberJoinAsync(projectID, member.UserID, content)
+		sent++
 	}
+
+	slog.Info("member join notify queued",
+		"project_id", projectID,
+		"added", len(added),
+		"sent", sent,
+		"skipped", skipped,
+	)
 }
 
 func notifyNewSubtaskMembers(projectID int64, subtask db.ProjectSubtask, added []db.ProjectMember, wasOnProject map[string]struct{}) {
 	if len(added) == 0 {
 		return
 	}
+
 	project, stats, err := loadProjectJoinContext(projectID)
 	if err != nil {
+		slog.Warn("subtask join notify skipped", "project_id", projectID, "subtask_id", subtask.ID, "err", err)
 		return
 	}
+
 	brief := wecom.JoinSubtaskBriefFromModel(subtask)
 	for _, member := range added {
 		if shouldSkipJoinNotify(project, member) {
 			continue
 		}
+		var content string
 		if _, onProject := wasOnProject[member.UserID]; onProject {
-			if memberJoinCoordinator.addSubtaskJoin(project, stats, member, brief) {
-				continue
-			}
-			content := wecom.FormatMemberJoinSubtask(project, brief)
-			wecom.NotifyMemberJoinAsync(member.UserID, content)
-			continue
+			content = wecom.FormatMemberJoinSubtask(project, brief)
+		} else {
+			content = wecom.FormatMemberJoinProjectAndSubtasks(project, stats, []wecom.JoinSubtaskBrief{brief})
 		}
-		content := wecom.FormatMemberJoinProjectAndSubtasks(project, stats, []wecom.JoinSubtaskBrief{brief})
-		wecom.NotifyMemberJoinAsync(member.UserID, content)
+		wecom.NotifyMemberJoinAsync(projectID, member.UserID, content)
 	}
 }
 
 func projectMemberSnapshot(projectID int64) map[string]struct{} {
 	set, err := db.ProjectMemberUserIDSet(sqlDB, projectID)
 	if err != nil {
+		slog.Warn("project member snapshot failed", "project_id", projectID, "err", err)
 		return map[string]struct{}{}
 	}
 	return set
-}
-
-func (c *joinNotifyCoordinator) scheduleProjectJoin(project db.Project, stats db.ProjectSubtaskStats, member db.ProjectMember) {
-	key := joinNotifyKey(project.ID, member.UserID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if existing, ok := c.pending[key]; ok {
-		existing.project = project
-		existing.stats = stats
-		existing.member = member
-		if existing.timer != nil {
-			existing.timer.Stop()
-		}
-		existing.timer = time.AfterFunc(joinNotifyDebounce, func() {
-			c.flush(key)
-		})
-		return
-	}
-
-	pending := &pendingJoinNotify{
-		project: project,
-		stats:   stats,
-		member:  member,
-	}
-	pending.timer = time.AfterFunc(joinNotifyDebounce, func() {
-		c.flush(key)
-	})
-	c.pending[key] = pending
-}
-
-func (c *joinNotifyCoordinator) addSubtaskJoin(project db.Project, stats db.ProjectSubtaskStats, member db.ProjectMember, brief wecom.JoinSubtaskBrief) bool {
-	key := joinNotifyKey(project.ID, member.UserID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	existing, ok := c.pending[key]
-	if !ok {
-		return false
-	}
-
-	existing.project = project
-	existing.stats = stats
-	existing.member = member
-	if !containsJoinSubtask(existing.subtasks, brief) {
-		existing.subtasks = append(existing.subtasks, brief)
-	}
-	if existing.timer != nil {
-		existing.timer.Stop()
-	}
-	existing.timer = time.AfterFunc(joinNotifyDebounce, func() {
-		c.flush(key)
-	})
-	return true
-}
-
-func containsJoinSubtask(list []wecom.JoinSubtaskBrief, brief wecom.JoinSubtaskBrief) bool {
-	for _, item := range list {
-		if item.Content == brief.Content &&
-			item.PlannedStartDate == brief.PlannedStartDate &&
-			item.PlannedEndDate == brief.PlannedEndDate {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *joinNotifyCoordinator) flush(key string) {
-	c.mu.Lock()
-	pending, ok := c.pending[key]
-	if !ok {
-		c.mu.Unlock()
-		return
-	}
-	delete(c.pending, key)
-	c.mu.Unlock()
-
-	if pending == nil || pending.member.UserID == "" {
-		return
-	}
-
-	var content string
-	if len(pending.subtasks) > 0 {
-		content = wecom.FormatMemberJoinProjectAndSubtasks(pending.project, pending.stats, pending.subtasks)
-	} else {
-		content = wecom.FormatMemberJoinProject(pending.project, pending.stats)
-	}
-	wecom.NotifyMemberJoinAsync(pending.member.UserID, content)
 }

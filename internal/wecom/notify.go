@@ -333,13 +333,26 @@ type JoinSubtaskBrief struct {
 	PlannedEndDate   string
 }
 
-// FormatMemberJoinProject 成员加入项目通知。
+// FormatMemberJoinProject 成员加入项目通知（风格与项目启动提醒一致）。
 func FormatMemberJoinProject(p db.Project, stats db.ProjectSubtaskStats) string {
 	var b strings.Builder
-	b.WriteString("📢 项目加入通知\n")
-	b.WriteString("您已被加入以下项目：\n")
+	b.WriteString("📢 项目加入提醒\n")
+	b.WriteString("您已被加入以下项目，请关注项目安排：\n")
 	b.WriteString("════════════════\n")
-	writeJoinProjectBlock(&b, p, stats, nil)
+
+	daysRemaining := joinDaysRemaining(p.StartDate)
+	line := projectDigestFromProject(p, p.StartDate, daysRemaining)
+	b.WriteString(formatProjectBlock(line, "计划启动"))
+
+	if end := strings.TrimSpace(stats.SubtaskEndDate); end != "" {
+		b.WriteString(fmt.Sprintf("  计划完结：%s\n", end))
+	} else if end := strings.TrimSpace(p.EndDate); end != "" {
+		b.WriteString(fmt.Sprintf("  实际完结：%s\n", end))
+	}
+	if summary := strings.TrimSpace(stats.TaskSummary); summary != "" {
+		b.WriteString(fmt.Sprintf("  任务概要：%s\n", summary))
+	}
+
 	b.WriteString("════════════════\n")
 	b.WriteString("发送时间：" + time.Now().Format("2006-01-02 15:04:05"))
 	return b.String()
@@ -362,8 +375,8 @@ func FormatMemberJoinSubtask(p db.Project, sub JoinSubtaskBrief) string {
 // FormatMemberJoinProjectAndSubtasks 同时加入项目与子任务（合成一条摘要）。
 func FormatMemberJoinProjectAndSubtasks(p db.Project, stats db.ProjectSubtaskStats, subtasks []JoinSubtaskBrief) string {
 	var b strings.Builder
-	b.WriteString("📢 项目加入通知\n")
-	b.WriteString("您已被加入以下项目及子任务：\n")
+	b.WriteString("📢 项目加入提醒\n")
+	b.WriteString("您已被加入以下项目及子任务，请关注项目安排：\n")
 	b.WriteString("════════════════\n")
 	writeJoinProjectBlock(&b, p, stats, subtasks)
 	b.WriteString("════════════════\n")
@@ -371,20 +384,18 @@ func FormatMemberJoinProjectAndSubtasks(p db.Project, stats db.ProjectSubtaskSta
 	return b.String()
 }
 
+func joinDaysRemaining(startDate string) int {
+	d, ok := db.DaysUntilEvent(startDate, time.Now())
+	if !ok || d < 0 {
+		return 0
+	}
+	return d
+}
+
 func writeJoinProjectBlock(b *strings.Builder, p db.Project, stats db.ProjectSubtaskStats, subtasks []JoinSubtaskBrief) {
-	line := projectDigestFromProject(p, "", 0)
-	b.WriteString("▎")
-	b.WriteString(formatProjectTitle(line.Name, line.WorkNo))
-	b.WriteByte('\n')
-	if line.ManagerName != "" {
-		b.WriteString(fmt.Sprintf("  负责人：%s\n", line.ManagerName))
-	}
-	if line.Status != "" {
-		b.WriteString(fmt.Sprintf("  状态：%s\n", line.Status))
-	}
-	if start := strings.TrimSpace(p.StartDate); start != "" {
-		b.WriteString(fmt.Sprintf("  启动日期：%s\n", start))
-	}
+	daysRemaining := joinDaysRemaining(p.StartDate)
+	line := projectDigestFromProject(p, p.StartDate, daysRemaining)
+	b.WriteString(formatProjectBlock(line, "计划启动"))
 	if end := strings.TrimSpace(stats.SubtaskEndDate); end != "" {
 		b.WriteString(fmt.Sprintf("  计划完结：%s\n", end))
 	} else if end := strings.TrimSpace(p.EndDate); end != "" {
@@ -427,15 +438,24 @@ func JoinSubtaskBriefFromModel(s db.ProjectSubtask) JoinSubtaskBrief {
 }
 
 // NotifyMemberJoinAsync 异步发送加入通知（失败仅记日志，不影响 API）。
-func NotifyMemberJoinAsync(userID, content string) {
+func NotifyMemberJoinAsync(projectID int64, userID, content string) {
 	if userID == "" || strings.TrimSpace(content) == "" {
 		return
 	}
 	go func() {
-		if _, err := NotifyUsers([]string{userID}, content); err != nil {
-			slog.Warn("member join notify failed", "userid", userID, "err", err)
+		msgID, err := NotifyUsers([]string{userID}, content)
+		if err != nil {
+			slog.Warn("member join notify failed",
+				"project_id", projectID,
+				"userid", userID,
+				"err", err,
+			)
 			return
 		}
-		slog.Info("member join notify sent", "userid", userID)
+		slog.Info("member join notify sent",
+			"project_id", projectID,
+			"userid", userID,
+			"msgid", msgID,
+		)
 	}()
 }
