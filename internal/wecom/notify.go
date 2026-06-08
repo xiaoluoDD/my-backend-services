@@ -63,20 +63,20 @@ func FormatProjectReminderEx(p db.Project, stats db.ProjectSubtaskStats, extra s
 	return b.String()
 }
 
-// FormatScheduledReminderHeader 定时提醒的标题说明行。
-func FormatScheduledReminderHeader(kind string, daysBefore int, eventDate string) string {
+// FormatScheduledReminderHeader 定时提醒的标题说明行。daysRemaining 为距计划日剩余天数（当天为 0）。
+func FormatScheduledReminderHeader(kind string, daysRemaining int, eventDate string) string {
 	dateText := emptyDash(eventDate)
 	switch kind {
 	case db.ReminderKindStart:
-		if daysBefore == 0 {
+		if daysRemaining <= 0 {
 			return fmt.Sprintf("【项目启动提醒】今日为计划启动日（%s）", dateText)
 		}
-		return fmt.Sprintf("【项目启动提醒】距离计划启动还有 %d 天（计划启动：%s）", daysBefore, dateText)
+		return fmt.Sprintf("【项目启动提醒】距离计划启动还有 %d 天（计划启动：%s）", daysRemaining, dateText)
 	case db.ReminderKindEnd:
-		if daysBefore == 0 {
+		if daysRemaining <= 0 {
 			return fmt.Sprintf("【项目完结提醒】今日为计划完结日（%s）", dateText)
 		}
-		return fmt.Sprintf("【项目完结提醒】距离计划完结还有 %d 天（计划完结：%s）", daysBefore, dateText)
+		return fmt.Sprintf("【项目完结提醒】距离计划完结还有 %d 天（计划完结：%s）", daysRemaining, dateText)
 	default:
 		return ""
 	}

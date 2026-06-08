@@ -104,7 +104,7 @@ func shouldSendStartReminder(plannedStart string, daysBefore int, stats db.Proje
 	if stats.SubtaskAllCompleted || stats.SubtaskAnyActualStart {
 		return false
 	}
-	return db.ShouldRemindOnDate(plannedStart, daysBefore, today)
+	return db.ShouldRemindInWindow(plannedStart, daysBefore, today)
 }
 
 func shouldSendEndReminder(plannedEnd string, daysBefore int, stats db.ProjectSubtaskStats, today time.Time) bool {
@@ -114,7 +114,7 @@ func shouldSendEndReminder(plannedEnd string, daysBefore int, stats db.ProjectSu
 	if stats.SubtaskAllCompleted {
 		return false
 	}
-	return db.ShouldRemindOnDate(plannedEnd, daysBefore, today)
+	return db.ShouldRemindInWindow(plannedEnd, daysBefore, today)
 }
 
 func sendIfNotSent(
@@ -136,7 +136,7 @@ func sendIfNotSent(
 		return false, nil
 	}
 
-	extra := wecom.FormatScheduledReminderHeader(kind, daysBefore, eventDate)
+	extra := wecom.FormatScheduledReminderHeader(kind, daysRemaining(eventDate, today), eventDate)
 	msgID, _, _, err := wecom.NotifyProjectMembersEx(project, members, stats, extra)
 	if err != nil {
 		return false, err
@@ -151,8 +151,16 @@ func sendIfNotSent(
 		"project", project.Name,
 		"kind", kind,
 		"msgid", msgID,
-		"days_before", daysBefore,
+		"days_remaining", daysRemaining(eventDate, today),
 		"event_date", eventDate,
 	)
 	return true, nil
+}
+
+func daysRemaining(eventDate string, today time.Time) int {
+	d, ok := db.DaysUntilEvent(eventDate, today)
+	if !ok || d < 0 {
+		return 0
+	}
+	return d
 }
