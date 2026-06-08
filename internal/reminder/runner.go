@@ -51,6 +51,7 @@ func RunDaily(sqlDB *sql.DB, settings db.AppSettings) RunResult {
 
 	slog.Info("reminder · finished",
 		"date", result.RunDate,
+		"projects", len(projects),
 		"start", result.StartSent,
 		"skipped", result.Skipped,
 		"errors", len(result.Errors),

@@ -281,7 +281,9 @@ func parseDateOnly(raw string) (time.Time, bool) {
 	if n == "" {
 		return time.Time{}, false
 	}
-	t, err := time.Parse("2006-01-02", n)
+	// 必须用本地时区：time.Parse 默认 UTC，与 dateOnly(time.Now()) 混比会导致
+	// 东八区「当天 0 点」早于「UTC 当天 0 点」，提醒窗口整天匹配失败。
+	t, err := time.ParseInLocation("2006-01-02", n, time.Local)
 	return t, err == nil
 }
 
