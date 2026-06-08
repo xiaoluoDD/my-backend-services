@@ -10,11 +10,15 @@ import (
 )
 
 var (
-	runMu        sync.Mutex
-	lastRunDate  string
+	runMu       sync.Mutex
+	lastRunDate string
 )
 
-// StartScheduler 在后台按 app_settings.reminder_time 每日触发一次提醒扫描。
+// oncePerDayReminderRun 定版后改为 true：同一自然日仅在 reminder_time 对应分钟触发一次。
+// 调试阶段设为 false，改提醒时间后当天可再次触发。
+const oncePerDayReminderRun = false
+
+// StartScheduler 在后台按 app_settings.reminder_time 每分钟检查并触发提醒扫描。
 func StartScheduler(sqlDB *sql.DB) {
 	go func() {
 		slog.Info("reminder scheduler started")
@@ -52,14 +56,16 @@ func maybeRunDaily(sqlDB *sql.DB) {
 		return
 	}
 
-	today := now.Format("2006-01-02")
-	runMu.Lock()
-	if lastRunDate == today {
+	if oncePerDayReminderRun {
+		today := now.Format("2006-01-02")
+		runMu.Lock()
+		if lastRunDate == today {
+			runMu.Unlock()
+			return
+		}
+		lastRunDate = today
 		runMu.Unlock()
-		return
 	}
-	lastRunDate = today
-	runMu.Unlock()
 
 	slog.Info("reminder scheduler triggering daily run", "reminder_time", reminderTime)
 	RunDaily(sqlDB, settings)
