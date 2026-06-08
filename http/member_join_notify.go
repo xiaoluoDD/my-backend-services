@@ -35,27 +35,12 @@ func memberUserIDSet(members []db.ProjectMember) map[string]struct{} {
 	return set
 }
 
-func shouldSkipJoinNotify(project db.Project, member db.ProjectMember) bool {
-	if member.UserID == "" {
-		return true
-	}
-	return member.UserID == project.ManagerUserID
+func shouldSkipJoinNotify(member db.ProjectMember) bool {
+	return member.UserID == ""
 }
 
-func loadProjectJoinContext(projectID int64) (db.Project, db.ProjectSubtaskStats, error) {
-	project, err := db.GetProject(sqlDB, projectID)
-	if err != nil {
-		return db.Project{}, db.ProjectSubtaskStats{}, err
-	}
-	stats, err := db.SummarizeProjectSubtaskStats(sqlDB, projectID)
-	if err != nil {
-		return db.Project{}, db.ProjectSubtaskStats{}, err
-	}
-	return project, stats, nil
-}
-
-func notifyNewExplicitProjectMembers(projectID int64, added []db.ProjectMember) {
-	if len(added) == 0 {
+func notifyProjectMemberJoins(projectID int64, added []db.ProjectMember, ensureManager bool) {
+	if len(added) == 0 && !ensureManager {
 		slog.Info("member join notify skipped", "project_id", projectID, "reason", "no_new_members")
 		return
 	}
@@ -68,19 +53,26 @@ func notifyNewExplicitProjectMembers(projectID int64, added []db.ProjectMember) 
 
 	sent := 0
 	skipped := 0
+	notified := make(map[string]struct{}, len(added)+1)
+
 	for _, member := range added {
-		if shouldSkipJoinNotify(project, member) {
+		if shouldSkipJoinNotify(member) {
 			skipped++
-			slog.Info("member join notify skip recipient",
-				"project_id", projectID,
-				"userid", member.UserID,
-				"reason", "manager_or_empty",
-			)
 			continue
 		}
-		content := wecom.FormatMemberJoinProject(project, stats)
+		isManager := member.UserID == project.ManagerUserID
+		content := wecom.FormatMemberJoinProject(project, stats, isManager)
 		wecom.NotifyMemberJoinAsync(projectID, member.UserID, content)
+		notified[member.UserID] = struct{}{}
 		sent++
+	}
+
+	if ensureManager && project.ManagerUserID != "" {
+		if _, ok := notified[project.ManagerUserID]; !ok {
+			content := wecom.FormatMemberJoinProject(project, stats, true)
+			wecom.NotifyMemberJoinAsync(projectID, project.ManagerUserID, content)
+			sent++
+		}
 	}
 
 	slog.Info("member join notify queued",
@@ -88,7 +80,24 @@ func notifyNewExplicitProjectMembers(projectID int64, added []db.ProjectMember) 
 		"added", len(added),
 		"sent", sent,
 		"skipped", skipped,
+		"ensure_manager", ensureManager,
 	)
+}
+
+func notifyNewExplicitProjectMembers(projectID int64, added []db.ProjectMember) {
+	notifyProjectMemberJoins(projectID, added, false)
+}
+
+func loadProjectJoinContext(projectID int64) (db.Project, db.ProjectSubtaskStats, error) {
+	project, err := db.GetProject(sqlDB, projectID)
+	if err != nil {
+		return db.Project{}, db.ProjectSubtaskStats{}, err
+	}
+	stats, err := db.SummarizeProjectSubtaskStats(sqlDB, projectID)
+	if err != nil {
+		return db.Project{}, db.ProjectSubtaskStats{}, err
+	}
+	return project, stats, nil
 }
 
 func notifyNewSubtaskMembers(projectID int64, subtask db.ProjectSubtask, added []db.ProjectMember, wasOnProject map[string]struct{}) {
@@ -104,7 +113,7 @@ func notifyNewSubtaskMembers(projectID int64, subtask db.ProjectSubtask, added [
 
 	brief := wecom.JoinSubtaskBriefFromModel(subtask)
 	for _, member := range added {
-		if shouldSkipJoinNotify(project, member) {
+		if shouldSkipJoinNotify(member) {
 			continue
 		}
 		var content string

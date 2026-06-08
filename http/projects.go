@@ -262,7 +262,7 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notifyNewExplicitProjectMembers(id, derefMembers(p.Members))
+	notifyProjectMemberJoins(id, derefMembers(p.Members), true)
 
 	created, _ := loadProjectView(id)
 	writeJSON(w, http.StatusOK, map[string]interface{}{

@@ -334,10 +334,14 @@ type JoinSubtaskBrief struct {
 }
 
 // FormatMemberJoinProject 成员加入项目通知（风格与项目启动提醒一致）。
-func FormatMemberJoinProject(p db.Project, stats db.ProjectSubtaskStats) string {
+func FormatMemberJoinProject(p db.Project, stats db.ProjectSubtaskStats, isManager bool) string {
 	var b strings.Builder
 	b.WriteString("📢 项目加入提醒\n")
-	b.WriteString("您已被加入以下项目，请关注项目安排：\n")
+	if isManager {
+		b.WriteString("您已被指定为本项目负责人，请关注项目安排：\n")
+	} else {
+		b.WriteString("您已被加入以下项目，请关注项目安排：\n")
+	}
 	b.WriteString("════════════════\n")
 
 	daysRemaining := joinDaysRemaining(p.StartDate)
