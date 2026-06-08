@@ -167,6 +167,7 @@ func main() {
 		})
 	})
 
+	http.HandleFunc("/api/settings", handleSettings)
 	http.HandleFunc("/api/projects", handleProjects)
 	http.HandleFunc("/api/project-subtasks", handleProjectSubtasks)
 	http.HandleFunc("/api/departments", handleDepartments)
@@ -186,6 +187,7 @@ func main() {
 		"wecom_users", "GET|PUT /api/wecom/users",
 		"departments", "GET|POST|PUT|DELETE /api/departments",
 		"wecom_stats", "GET /api/wecom/stats",
+		"settings", "GET|PUT /api/settings",
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"project_subtasks", "GET|POST|PUT|DELETE /api/project-subtasks",
 		"db_export", "GET /api/db/export",

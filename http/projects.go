@@ -97,6 +97,28 @@ func handleProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func listProjects(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr != "" {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || id <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"ok": false, "error": "请使用有效的 ?id=数字",
+			})
+			return
+		}
+		view, err := loadProjectView(id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{
+				"ok": false, "error": "项目不存在",
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ok": true, "project": view,
+		})
+		return
+	}
+
 	projects, err := db.ListProjects(sqlDB)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
