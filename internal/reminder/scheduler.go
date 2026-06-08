@@ -21,7 +21,7 @@ const oncePerDayReminderRun = false
 // StartScheduler 在后台按 app_settings.reminder_time 每分钟检查并触发提醒扫描。
 func StartScheduler(sqlDB *sql.DB) {
 	go func() {
-		slog.Info("reminder scheduler started")
+		slog.Info("reminder · scheduler started")
 		// 启动后先对齐到下一分钟，再每分钟检查一次。
 		waitUntilNextMinute()
 		ticker := time.NewTicker(time.Minute)
@@ -42,7 +42,7 @@ func waitUntilNextMinute() {
 func maybeRunDaily(sqlDB *sql.DB) {
 	settings, err := db.GetAppSettings(sqlDB)
 	if err != nil {
-		slog.Error("reminder scheduler load settings failed", "err", err)
+		slog.Error("reminder · load settings failed", "err", err)
 		return
 	}
 
@@ -67,6 +67,6 @@ func maybeRunDaily(sqlDB *sql.DB) {
 		runMu.Unlock()
 	}
 
-	slog.Info("reminder scheduler triggering daily run", "reminder_time", reminderTime)
+	slog.Info("reminder · trigger", "time", reminderTime)
 	RunDaily(sqlDB, settings)
 }

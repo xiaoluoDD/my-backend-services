@@ -73,10 +73,10 @@ func RunDaily(sqlDB *sql.DB, settings db.AppSettings) RunResult {
 		}
 	}
 
-	slog.Info("daily reminder finished",
-		"run_date", result.RunDate,
-		"start_sent", result.StartSent,
-		"end_sent", result.EndSent,
+	slog.Info("reminder · finished",
+		"date", result.RunDate,
+		"start", result.StartSent,
+		"end", result.EndSent,
 		"skipped", result.Skipped,
 		"errors", len(result.Errors),
 	)
@@ -143,16 +143,16 @@ func sendIfNotSent(
 	}
 
 	if err := db.RecordReminderSent(sqlDB, project.ID, kind, sentDate); err != nil {
-		slog.Warn("record reminder sent failed", "project_id", project.ID, "kind", kind, "err", err)
+		slog.Warn("reminder · record failed", "project_id", project.ID, "kind", kind, "err", err)
 	}
 
-	slog.Info("reminder sent",
+	slog.Info("reminder · sent",
 		"project_id", project.ID,
-		"project", project.Name,
+		"name", project.Name,
 		"kind", kind,
 		"msgid", msgID,
-		"days_remaining", daysRemaining(eventDate, today),
-		"event_date", eventDate,
+		"days_left", daysRemaining(eventDate, today),
+		"event", eventDate,
 	)
 	return true, nil
 }
