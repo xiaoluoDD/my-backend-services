@@ -7,4 +7,7 @@ const (
 
 	// oncePerDayReminderDedup 定版值 true：同一项目、同类型（启动/完结）提醒每天只发一次。
 	oncePerDayReminderDedup = false
+
+	// schedulerMinuteLog 定版值 false：每分钟输出一次 tick 日志，便于确认定时器在跑。
+	schedulerMinuteLog = true
 )

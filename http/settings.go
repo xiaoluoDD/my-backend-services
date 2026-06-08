@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/db"
+	"github.com/xiaoluoDD/my-backend-services/internal/reminder"
 )
 
 type settingsPayload struct {
@@ -112,6 +113,7 @@ func putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	saved, _ := db.GetAppSettings(sqlDB)
+	reminder.LogSettingsUpdated(saved)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "设置已保存", "settings": saved,
 	})

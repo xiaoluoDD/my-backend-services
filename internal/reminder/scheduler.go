@@ -17,7 +17,7 @@ var (
 // StartScheduler 在后台按 app_settings.reminder_time 每分钟检查并触发提醒扫描。
 func StartScheduler(sqlDB *sql.DB) {
 	go func() {
-		slog.Info("reminder · scheduler started")
+		logSchedulerStarted(sqlDB)
 		// 启动后先对齐到下一分钟，再每分钟检查一次。
 		waitUntilNextMinute()
 		ticker := time.NewTicker(time.Minute)
@@ -27,6 +27,25 @@ func StartScheduler(sqlDB *sql.DB) {
 			<-ticker.C
 		}
 	}()
+}
+
+func logSchedulerStarted(sqlDB *sql.DB) {
+	settings, err := db.GetAppSettings(sqlDB)
+	reminderTime := ""
+	if err != nil {
+		slog.Warn("reminder · scheduler started (settings unreadable)", "err", err, "tz", time.Now().Format("MST"))
+		return
+	}
+	reminderTime = settings.ReminderTime
+	if reminderTime == "" {
+		slog.Warn("reminder · scheduler started", "reminder_time", "unset", "tz", time.Now().Format("MST"))
+		return
+	}
+	slog.Info("reminder · scheduler started",
+		"reminder_time", reminderTime,
+		"tz", time.Now().Format("MST"),
+		"start_days", settings.ProjectStartReminderDays,
+	)
 }
 
 func waitUntilNextMinute() {
@@ -43,12 +62,26 @@ func maybeRunDaily(sqlDB *sql.DB) {
 	}
 
 	reminderTime := settings.ReminderTime
+	now := time.Now()
+	nowHM := now.Format("15:04")
+
 	if reminderTime == "" {
+		if schedulerMinuteLog {
+			slog.Info("reminder · tick", "now", nowHM, "reminder_time", "unset", "action", "skip")
+		}
 		return
 	}
 
-	now := time.Now()
-	if now.Format("15:04") != reminderTime {
+	matched := nowHM == reminderTime
+	if schedulerMinuteLog {
+		action := "wait"
+		if matched {
+			action = "trigger"
+		}
+		slog.Info("reminder · tick", "now", nowHM, "reminder_time", reminderTime, "action", action)
+	}
+
+	if !matched {
 		return
 	}
 
@@ -57,6 +90,7 @@ func maybeRunDaily(sqlDB *sql.DB) {
 		runMu.Lock()
 		if lastRunDate == today {
 			runMu.Unlock()
+			slog.Info("reminder · skip", "reason", "already_ran_today", "date", today)
 			return
 		}
 		lastRunDate = today
@@ -65,4 +99,18 @@ func maybeRunDaily(sqlDB *sql.DB) {
 
 	slog.Info("reminder · trigger", "time", reminderTime)
 	RunDaily(sqlDB, settings)
+}
+
+// LogSettingsUpdated 保存提醒相关设置后输出一条日志，便于对照 tick。
+func LogSettingsUpdated(settings db.AppSettings) {
+	if settings.ReminderTime == "" {
+		slog.Warn("reminder · settings updated", "reminder_time", "unset")
+		return
+	}
+	slog.Info("reminder · settings updated",
+		"reminder_time", settings.ReminderTime,
+		"start_days", settings.ProjectStartReminderDays,
+		"server_now", time.Now().Format("15:04"),
+		"tz", time.Now().Format("MST"),
+	)
 }
