@@ -28,7 +28,7 @@ func FormatProjectReminderEx(p db.Project, stats db.ProjectSubtaskStats, extra s
 	if p.Year != "" || p.WorkNo != "" {
 		b.WriteString(fmt.Sprintf("年度 / 工番号：%s / %s\n", emptyDash(p.Year), emptyDash(p.WorkNo)))
 	}
-	b.WriteString(fmt.Sprintf("项目状态：%s\n", emptyDash(p.Status)))
+	b.WriteString(fmt.Sprintf("项目状态：%s\n", emptyDash(db.EffectiveProjectStatus(p))))
 	if p.ManagerName != "" || p.ManagerUserID != "" {
 		mgr := p.ManagerName
 		if mgr == "" {
@@ -39,16 +39,12 @@ func FormatProjectReminderEx(p db.Project, stats db.ProjectSubtaskStats, extra s
 		b.WriteString(fmt.Sprintf("负责人：%s\n", mgr))
 	}
 
-	startDate := stats.SubtaskStartDate
-	if startDate == "" {
-		startDate = p.StartDate
+	b.WriteString(fmt.Sprintf("启动日期：%s\n", emptyDash(p.StartDate)))
+	if p.EndDate != "" {
+		b.WriteString(fmt.Sprintf("实际完结日期：%s\n", emptyDash(p.EndDate)))
 	}
-	endDate := stats.SubtaskEndDate
-	if endDate == "" {
-		endDate = p.EndDate
-	}
-	if startDate != "" || endDate != "" {
-		b.WriteString(fmt.Sprintf("计划周期：%s ～ %s\n", emptyDash(startDate), emptyDash(endDate)))
+	if stats.SubtaskEndDate != "" {
+		b.WriteString(fmt.Sprintf("子任务计划完结：%s\n", emptyDash(stats.SubtaskEndDate)))
 	}
 
 	tasks := strings.TrimSpace(stats.TaskSummary)

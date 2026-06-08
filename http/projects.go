@@ -40,7 +40,7 @@ type projectView struct {
 }
 
 func (p projectPayload) toModel() db.Project {
-	return db.Project{
+	model := db.Project{
 		ID:            p.ID,
 		Year:          p.Year,
 		WorkNo:        p.WorkNo,
@@ -49,17 +49,52 @@ func (p projectPayload) toModel() db.Project {
 		ManagerName:   p.ManagerName,
 		GroupChat:     p.GroupChat,
 		GroupChatID:   p.GroupChatID,
-		Status:        p.Status,
 		StartDate:     p.StartDate,
 		EndDate:       p.EndDate,
 		Tasks:         p.Tasks,
 	}
+	db.SyncProjectStatus(&model)
+	return model
+}
+
+func validateProjectPayload(p projectPayload) string {
+	if p.Name == "" {
+		return "项目名称不能为空"
+	}
+	if normalizeProjectDate(p.StartDate) == "" {
+		return "请填写项目启动日期"
+	}
+	return ""
+}
+
+func normalizeProjectDate(raw string) string {
+	t, ok := db.ParseDateOnly(raw)
+	if !ok {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
+func prepareProjectModel(p projectPayload) (db.Project, string) {
+	if msg := validateProjectPayload(p); msg != "" {
+		return db.Project{}, msg
+	}
+	model := p.toModel()
+	model.StartDate = normalizeProjectDate(model.StartDate)
+	if model.EndDate != "" {
+		if d := normalizeProjectDate(model.EndDate); d != "" {
+			model.EndDate = d
+		}
+	}
+	db.SyncProjectStatus(&model)
+	return model, ""
 }
 
 func projectToView(p db.Project, members []db.ProjectMember, stats db.ProjectSubtaskStats) projectView {
 	if members == nil {
 		members = []db.ProjectMember{}
 	}
+	p.Status = db.EffectiveProjectStatus(p)
 	return projectView{
 		Project:                p,
 		Members:                members,
@@ -197,14 +232,15 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if p.Name == "" {
+	model, msg := prepareProjectModel(p)
+	if msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"ok": false, "error": "项目名称不能为空",
+			"ok": false, "error": msg,
 		})
 		return
 	}
 
-	id, err := db.CreateProject(sqlDB, p.toModel())
+	id, err := db.CreateProject(sqlDB, model)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
@@ -233,14 +269,16 @@ func updateProject(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if p.Name == "" {
+	model, msg := prepareProjectModel(p)
+	if msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"ok": false, "error": "项目名称不能为空",
+			"ok": false, "error": msg,
 		})
 		return
 	}
+	model.ID = p.ID
 
-	if err := db.UpdateProject(sqlDB, p.toModel()); err != nil {
+	if err := db.UpdateProject(sqlDB, model); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
 		})

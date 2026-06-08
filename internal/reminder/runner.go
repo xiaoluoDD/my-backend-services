@@ -47,10 +47,10 @@ func RunDaily(sqlDB *sql.DB, settings db.AppSettings) RunResult {
 			continue
 		}
 
-		plannedStart := pickPlannedStart(project, stats)
-		plannedEnd := pickPlannedEnd(project, stats)
+		plannedStart := pickPlannedStart(project)
+		plannedEnd := pickPlannedEnd(stats)
 
-		if shouldSendStartReminder(plannedStart, startDays, stats, today) {
+		if shouldSendStartReminder(project, plannedStart, startDays, today) {
 			sent, err := sendIfNotSent(sqlDB, project, members, stats, db.ReminderKindStart, startDays, plannedStart, today)
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("项目 %d 启动提醒: %v", project.ID, err))
@@ -61,7 +61,7 @@ func RunDaily(sqlDB *sql.DB, settings db.AppSettings) RunResult {
 			}
 		}
 
-		if shouldSendEndReminder(plannedEnd, endDays, stats, today) {
+		if shouldSendEndReminder(project, plannedEnd, endDays, today) {
 			sent, err := sendIfNotSent(sqlDB, project, members, stats, db.ReminderKindEnd, endDays, plannedEnd, today)
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("项目 %d 完结提醒: %v", project.ID, err))
@@ -83,35 +83,29 @@ func RunDaily(sqlDB *sql.DB, settings db.AppSettings) RunResult {
 	return result
 }
 
-func pickPlannedStart(p db.Project, stats db.ProjectSubtaskStats) string {
-	if stats.SubtaskStartDate != "" {
-		return stats.SubtaskStartDate
-	}
+func pickPlannedStart(p db.Project) string {
 	return p.StartDate
 }
 
-func pickPlannedEnd(p db.Project, stats db.ProjectSubtaskStats) string {
-	if stats.SubtaskEndDate != "" {
-		return stats.SubtaskEndDate
-	}
-	return p.EndDate
+func pickPlannedEnd(stats db.ProjectSubtaskStats) string {
+	return stats.SubtaskEndDate
 }
 
-func shouldSendStartReminder(plannedStart string, daysBefore int, stats db.ProjectSubtaskStats, today time.Time) bool {
+func shouldSendStartReminder(p db.Project, plannedStart string, daysBefore int, today time.Time) bool {
 	if plannedStart == "" {
 		return false
 	}
-	if stats.SubtaskAllCompleted || stats.SubtaskAnyActualStart {
+	if db.EffectiveProjectStatus(p) != db.ProjectStatusNotStarted {
 		return false
 	}
 	return db.ShouldRemindInWindow(plannedStart, daysBefore, today)
 }
 
-func shouldSendEndReminder(plannedEnd string, daysBefore int, stats db.ProjectSubtaskStats, today time.Time) bool {
+func shouldSendEndReminder(p db.Project, plannedEnd string, daysBefore int, today time.Time) bool {
 	if plannedEnd == "" {
 		return false
 	}
-	if stats.SubtaskAllCompleted {
+	if db.ProjectHasActualEnd(p) {
 		return false
 	}
 	return db.ShouldRemindInWindow(plannedEnd, daysBefore, today)
