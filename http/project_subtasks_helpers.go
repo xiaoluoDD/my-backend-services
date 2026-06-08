@@ -38,3 +38,10 @@ func loadSubtaskWithMembers(id int64) (db.ProjectSubtask, error) {
 	s.Status = db.EffectiveSubtaskStatus(s)
 	return s, nil
 }
+
+func syncSubtaskMembersToProject(projectID int64, members []db.ProjectMember) error {
+	if projectID <= 0 || len(members) == 0 {
+		return nil
+	}
+	return db.AddProjectMembers(sqlDB, projectID, members)
+}

@@ -95,6 +95,12 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if err := syncSubtaskMembersToProject(s.ProjectID, s.Members); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	created, err := loadSubtaskWithMembers(id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -117,6 +123,12 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := db.UpdateProjectSubtask(sqlDB, s); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+	if err := syncSubtaskMembersToProject(s.ProjectID, s.Members); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
 		})
 		return

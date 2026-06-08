@@ -67,6 +67,39 @@ func ReplaceProjectMembers(db *sql.DB, projectID int64, members []ProjectMember)
 	return tx.Commit()
 }
 
+// AddProjectMembers 将成员追加到项目（已存在则跳过，不重复添加）。
+func AddProjectMembers(db *sql.DB, projectID int64, members []ProjectMember) error {
+	if projectID <= 0 {
+		return fmt.Errorf("无效的项目 ID")
+	}
+	existing, err := ListProjectMembers(db, projectID)
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(existing))
+	for _, m := range existing {
+		if m.UserID != "" {
+			seen[m.UserID] = struct{}{}
+		}
+	}
+	for _, m := range members {
+		if m.UserID == "" {
+			continue
+		}
+		if _, ok := seen[m.UserID]; ok {
+			continue
+		}
+		if _, err := db.Exec(
+			`INSERT INTO project_members (project_id, userid, name) VALUES (?, ?, ?)`,
+			projectID, m.UserID, m.Name,
+		); err != nil {
+			return err
+		}
+		seen[m.UserID] = struct{}{}
+	}
+	return nil
+}
+
 // ProjectRecipients 项目提醒接收人（负责人 + 项目成员，去重）。
 func ProjectRecipients(p Project, members []ProjectMember) []ProjectMember {
 	seen := make(map[string]struct{})
