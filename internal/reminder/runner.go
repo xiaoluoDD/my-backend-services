@@ -128,12 +128,14 @@ func sendIfNotSent(
 	today time.Time,
 ) (bool, error) {
 	sentDate := today.Format("2006-01-02")
-	already, err := db.WasReminderSent(sqlDB, project.ID, kind, sentDate)
-	if err != nil {
-		return false, err
-	}
-	if already {
-		return false, nil
+	if oncePerDayReminderDedup {
+		already, err := db.WasReminderSent(sqlDB, project.ID, kind, sentDate)
+		if err != nil {
+			return false, err
+		}
+		if already {
+			return false, nil
+		}
 	}
 
 	extra := wecom.FormatScheduledReminderHeader(kind, daysRemaining(eventDate, today), eventDate)
@@ -142,8 +144,10 @@ func sendIfNotSent(
 		return false, err
 	}
 
-	if err := db.RecordReminderSent(sqlDB, project.ID, kind, sentDate); err != nil {
-		slog.Warn("reminder · record failed", "project_id", project.ID, "kind", kind, "err", err)
+	if oncePerDayReminderDedup {
+		if err := db.RecordReminderSent(sqlDB, project.ID, kind, sentDate); err != nil {
+			slog.Warn("reminder · record failed", "project_id", project.ID, "kind", kind, "err", err)
+		}
 	}
 
 	slog.Info("reminder · sent",

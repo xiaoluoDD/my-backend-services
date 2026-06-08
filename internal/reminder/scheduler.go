@@ -14,10 +14,6 @@ var (
 	lastRunDate string
 )
 
-// oncePerDayReminderRun 定版后改为 true：同一自然日仅在 reminder_time 对应分钟触发一次。
-// 调试阶段设为 false，改提醒时间后当天可再次触发。
-const oncePerDayReminderRun = false
-
 // StartScheduler 在后台按 app_settings.reminder_time 每分钟检查并触发提醒扫描。
 func StartScheduler(sqlDB *sql.DB) {
 	go func() {
