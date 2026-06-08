@@ -27,12 +27,16 @@ type projectPayload struct {
 
 type projectView struct {
 	db.Project
-	Members             []db.ProjectMember `json:"members"`
-	TaskSummary         string             `json:"task_summary"`
-	SubtaskStartDate    string             `json:"subtask_start_date"`
-	SubtaskEndDate      string             `json:"subtask_end_date"`
-	SubtaskCount        int                `json:"subtask_count"`
-	SubtaskAllCompleted bool               `json:"subtask_all_completed"`
+	Members                []db.ProjectMember `json:"members"`
+	TaskSummary            string             `json:"task_summary"`
+	SubtaskStartDate       string             `json:"subtask_start_date"`
+	SubtaskEndDate         string             `json:"subtask_end_date"`
+	SubtaskActualStartDate string             `json:"subtask_actual_start_date"`
+	SubtaskActualEndDate   string             `json:"subtask_actual_end_date"`
+	SubtaskCount           int                `json:"subtask_count"`
+	SubtaskAllCompleted    bool               `json:"subtask_all_completed"`
+	SubtaskAnyActualStart  bool               `json:"subtask_any_actual_start"`
+	SubtaskAnyOverdue      bool               `json:"subtask_any_overdue"`
 }
 
 func (p projectPayload) toModel() db.Project {
@@ -57,13 +61,17 @@ func projectToView(p db.Project, members []db.ProjectMember, stats db.ProjectSub
 		members = []db.ProjectMember{}
 	}
 	return projectView{
-		Project:             p,
-		Members:             members,
-		TaskSummary:         stats.TaskSummary,
-		SubtaskStartDate:    stats.SubtaskStartDate,
-		SubtaskEndDate:      stats.SubtaskEndDate,
-		SubtaskCount:        stats.SubtaskCount,
-		SubtaskAllCompleted: stats.SubtaskAllCompleted,
+		Project:                p,
+		Members:                members,
+		TaskSummary:            stats.TaskSummary,
+		SubtaskStartDate:       stats.SubtaskStartDate,
+		SubtaskEndDate:         stats.SubtaskEndDate,
+		SubtaskActualStartDate: stats.SubtaskActualStartDate,
+		SubtaskActualEndDate:   stats.SubtaskActualEndDate,
+		SubtaskCount:           stats.SubtaskCount,
+		SubtaskAllCompleted:    stats.SubtaskAllCompleted,
+		SubtaskAnyActualStart:  stats.SubtaskAnyActualStart,
+		SubtaskAnyOverdue:      stats.SubtaskAnyOverdue,
 	}
 }
 

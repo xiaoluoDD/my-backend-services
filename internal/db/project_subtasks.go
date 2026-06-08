@@ -9,11 +9,15 @@ import (
 
 // ProjectSubtaskStats 子任务汇总信息（列表展示用）。
 type ProjectSubtaskStats struct {
-	TaskSummary         string `json:"task_summary"`
-	SubtaskStartDate    string `json:"subtask_start_date"`
-	SubtaskEndDate      string `json:"subtask_end_date"`
-	SubtaskCount        int    `json:"subtask_count"`
-	SubtaskAllCompleted bool   `json:"subtask_all_completed"`
+	TaskSummary            string `json:"task_summary"`
+	SubtaskStartDate       string `json:"subtask_start_date"`
+	SubtaskEndDate         string `json:"subtask_end_date"`
+	SubtaskActualStartDate string `json:"subtask_actual_start_date"`
+	SubtaskActualEndDate   string `json:"subtask_actual_end_date"`
+	SubtaskCount           int    `json:"subtask_count"`
+	SubtaskAllCompleted    bool   `json:"subtask_all_completed"`
+	SubtaskAnyActualStart  bool   `json:"subtask_any_actual_start"`
+	SubtaskAnyOverdue      bool   `json:"subtask_any_overdue"`
 }
 
 type ProjectSubtask struct {
@@ -165,7 +169,7 @@ func DeleteProjectSubtask(db *sql.DB, id int64) error {
 // SummarizeAllProjectSubtaskStats 按项目汇总子任务内容与日期的计划区间。
 func SummarizeAllProjectSubtaskStats(db *sql.DB) (map[int64]ProjectSubtaskStats, error) {
 	rows, err := db.Query(
-		`SELECT project_id, content, planned_start_date, planned_end_date, actual_end_date
+		`SELECT project_id, content, planned_start_date, planned_end_date, actual_start_date, actual_end_date
 		 FROM project_subtasks
 		 ORDER BY project_id, id`,
 	)
@@ -177,8 +181,8 @@ func SummarizeAllProjectSubtaskStats(db *sql.DB) (map[int64]ProjectSubtaskStats,
 	out := make(map[int64]ProjectSubtaskStats)
 	for rows.Next() {
 		var projectID int64
-		var content, plannedStart, plannedEnd, actualEnd string
-		if err := rows.Scan(&projectID, &content, &plannedStart, &plannedEnd, &actualEnd); err != nil {
+		var content, plannedStart, plannedEnd, actualStart, actualEnd string
+		if err := rows.Scan(&projectID, &content, &plannedStart, &plannedEnd, &actualStart, &actualEnd); err != nil {
 			return nil, err
 		}
 
@@ -201,8 +205,25 @@ func SummarizeAllProjectSubtaskStats(db *sql.DB) (map[int64]ProjectSubtaskStats,
 				stats.SubtaskEndDate = d
 			}
 		}
-		stats.SubtaskCount++
+		if d := normalizeDateString(actualStart); d != "" {
+			stats.SubtaskAnyActualStart = true
+			if stats.SubtaskActualStartDate == "" || d < stats.SubtaskActualStartDate {
+				stats.SubtaskActualStartDate = d
+			}
+		}
 		hasActualEnd := normalizeDateString(actualEnd) != ""
+		hasActualStart := normalizeDateString(actualStart) != ""
+		if hasActualStart && !hasActualEnd {
+			if t, ok := parseDateOnly(plannedEnd); ok && todayDateOnly().After(t) {
+				stats.SubtaskAnyOverdue = true
+			}
+		}
+		if d := normalizeDateString(actualEnd); d != "" {
+			if stats.SubtaskActualEndDate == "" || d > stats.SubtaskActualEndDate {
+				stats.SubtaskActualEndDate = d
+			}
+		}
+		stats.SubtaskCount++
 		if stats.SubtaskCount == 1 {
 			stats.SubtaskAllCompleted = hasActualEnd
 		} else {
@@ -230,17 +251,13 @@ func EffectiveSubtaskStatus(s ProjectSubtask) string {
 	if normalizeDateString(s.ActualEndDate) != "" {
 		return SubtaskStatusCompleted
 	}
+	if normalizeDateString(s.ActualStartDate) == "" {
+		return SubtaskStatusNotStarted
+	}
 	if t, ok := parseDateOnly(s.PlannedEndDate); ok && todayDateOnly().After(t) {
 		return SubtaskStatusOverdue
 	}
-	stored := strings.TrimSpace(s.Status)
-	if stored != "" && stored != SubtaskStatusCompleted && stored != SubtaskStatusOverdue {
-		return stored
-	}
-	if stored == "" {
-		return SubtaskStatusNotStarted
-	}
-	return SubtaskStatusNotStarted
+	return SubtaskStatusInProgress
 }
 
 // SyncSubtaskStatus 将子任务 status 字段与日期规则对齐后写回结构体。
