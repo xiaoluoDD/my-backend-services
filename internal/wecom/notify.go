@@ -20,12 +20,13 @@ type ProjectDigestLine struct {
 
 // SubtaskDigestLine 子任务摘要行。
 type SubtaskDigestLine struct {
-	ProjectName   string
-	WorkNo        string
-	ManagerName   string
-	Content       string
-	EventDate     string
-	DaysRemaining int
+	ProjectName     string
+	WorkNo          string
+	ManagerName     string
+	Content         string
+	EventDate       string
+	PlannedEndDate  string
+	DaysRemaining   int
 }
 
 // FormatProjectReminder 生成项目提醒正文。
@@ -162,6 +163,11 @@ func formatSubtaskBlock(index int, line SubtaskDigestLine) string {
 	if line.EventDate != "" {
 		b.WriteString(fmt.Sprintf("     计划开始：%s\n", line.EventDate))
 		b.WriteString(fmt.Sprintf("     ⏰ %s\n", formatCountdown(line.DaysRemaining, line.EventDate)))
+	}
+	if plannedEnd := strings.TrimSpace(line.PlannedEndDate); plannedEnd != "" {
+		b.WriteString(fmt.Sprintf("     计划完结：%s\n", plannedEnd))
+	} else {
+		b.WriteString("     计划完结：—\n")
 	}
 	return b.String()
 }

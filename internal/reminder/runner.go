@@ -336,12 +336,13 @@ func subtaskDigestLines(items []subtaskDigestItem) []wecom.SubtaskDigestLine {
 			mgr = it.Project.ManagerUserID
 		}
 		lines = append(lines, wecom.SubtaskDigestLine{
-			ProjectName:   it.Project.Name,
-			WorkNo:        it.Project.WorkNo,
-			ManagerName:   mgr,
-			Content:       it.Subtask.Content,
-			EventDate:     it.EventDate,
-			DaysRemaining: it.DaysRemaining,
+			ProjectName:    it.Project.Name,
+			WorkNo:         it.Project.WorkNo,
+			ManagerName:    mgr,
+			Content:        it.Subtask.Content,
+			EventDate:      it.EventDate,
+			PlannedEndDate: it.Subtask.PlannedEndDate,
+			DaysRemaining:  it.DaysRemaining,
 		})
 	}
 	return lines
@@ -360,12 +361,13 @@ func uniqueSubtaskLines(items []subtaskDigestItem) ([]wecom.SubtaskDigestLine, m
 			mgr = it.Project.ManagerUserID
 		}
 		lines = append(lines, wecom.SubtaskDigestLine{
-			ProjectName:   it.Project.Name,
-			WorkNo:        it.Project.WorkNo,
-			ManagerName:   mgr,
-			Content:       it.Subtask.Content,
-			EventDate:     it.EventDate,
-			DaysRemaining: it.DaysRemaining,
+			ProjectName:    it.Project.Name,
+			WorkNo:         it.Project.WorkNo,
+			ManagerName:    mgr,
+			Content:        it.Subtask.Content,
+			EventDate:      it.EventDate,
+			PlannedEndDate: it.Subtask.PlannedEndDate,
+			DaysRemaining:  it.DaysRemaining,
 		})
 	}
 	return lines, seen
