@@ -37,15 +37,7 @@ func handleWecomNotifyProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := db.ListProjectMembers(sqlDB, req.ProjectID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"ok": false, "error": err.Error(),
-		})
-		return
-	}
-
-	msgID, recipients, content, err := wecom.NotifyProjectMembers(project, members, req.Content)
+	msgID, recipients, content, err := wecom.NotifyProjectManager(project, req.Content)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),

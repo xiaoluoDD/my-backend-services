@@ -43,9 +43,6 @@ func FormatProjectReminderEx(p db.Project, stats db.ProjectSubtaskStats, extra s
 	if p.EndDate != "" {
 		b.WriteString(fmt.Sprintf("实际完结日期：%s\n", emptyDash(p.EndDate)))
 	}
-	if stats.SubtaskEndDate != "" {
-		b.WriteString(fmt.Sprintf("子任务计划完结：%s\n", emptyDash(stats.SubtaskEndDate)))
-	}
 
 	tasks := strings.TrimSpace(stats.TaskSummary)
 	if tasks == "" {
@@ -68,11 +65,6 @@ func FormatScheduledReminderHeader(kind string, daysRemaining int, eventDate str
 			return fmt.Sprintf("【项目启动提醒】今日为计划启动日（%s）", dateText)
 		}
 		return fmt.Sprintf("【项目启动提醒】距离计划启动还有 %d 天（计划启动：%s）", daysRemaining, dateText)
-	case db.ReminderKindEnd:
-		if daysRemaining <= 0 {
-			return fmt.Sprintf("【项目完结提醒】今日为计划完结日（%s）", dateText)
-		}
-		return fmt.Sprintf("【项目完结提醒】距离计划完结还有 %d 天（计划完结：%s）", daysRemaining, dateText)
 	default:
 		return ""
 	}
@@ -83,6 +75,29 @@ func emptyDash(s string) string {
 		return "—"
 	}
 	return strings.TrimSpace(s)
+}
+
+// NotifyProjectManager 向项目负责人发送提醒。
+func NotifyProjectManager(p db.Project, extra string) (msgID string, recipients []db.ProjectMember, content string, err error) {
+	return NotifyProjectManagerEx(p, db.ProjectSubtaskStats{}, extra)
+}
+
+// NotifyProjectManagerEx 向项目负责人发送提醒，正文中可包含子任务汇总信息。
+func NotifyProjectManagerEx(p db.Project, stats db.ProjectSubtaskStats, extra string) (msgID string, recipients []db.ProjectMember, content string, err error) {
+	recipients, err = db.ProjectManagerRecipient(p)
+	if err != nil {
+		return "", nil, "", err
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		return "", nil, "", err
+	}
+
+	userids := []string{recipients[0].UserID}
+	content = FormatProjectReminderEx(p, stats, extra)
+	msgID, err = SendTextToUsers(cfg, userids, content)
+	return msgID, recipients, content, err
 }
 
 // NotifyProjectMembers 向项目内成员（负责人 + 关联成员）发送提醒。

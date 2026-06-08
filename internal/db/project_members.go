@@ -202,6 +202,14 @@ func PruneProjectMembersAfterSubtaskRemoval(db *sql.DB, projectID int64, removed
 	return nil
 }
 
+// ProjectManagerRecipient 项目负责人（定时/手动项目提醒接收人）。
+func ProjectManagerRecipient(p Project) ([]ProjectMember, error) {
+	if p.ManagerUserID == "" {
+		return nil, fmt.Errorf("该项目未配置负责人，请先编辑项目")
+	}
+	return []ProjectMember{{UserID: p.ManagerUserID, Name: p.ManagerName}}, nil
+}
+
 // ProjectRecipients 项目提醒接收人（负责人 + 项目成员，去重）。
 func ProjectRecipients(p Project, members []ProjectMember) []ProjectMember {
 	seen := make(map[string]struct{})
