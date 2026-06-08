@@ -5,12 +5,14 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/db"
 )
 
 type settingsPayload struct {
 	ServerBaseURL string `json:"server_base_url"`
+	ReminderTime  string `json:"reminder_time"`
 }
 
 func normalizeBaseURL(raw string) string {
@@ -19,6 +21,18 @@ func normalizeBaseURL(raw string) string {
 		s = strings.TrimSuffix(s, "/")
 	}
 	return s
+}
+
+func normalizeReminderTime(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", nil
+	}
+	t, err := time.Parse("15:04", s)
+	if err != nil {
+		return "", err
+	}
+	return t.Format("15:04"), nil
 }
 
 func handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +89,18 @@ func putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := db.SaveAppSettings(sqlDB, db.AppSettings{ServerBaseURL: p.ServerBaseURL}); err != nil {
+	reminderTime, err := normalizeReminderTime(p.ReminderTime)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "reminder_time 格式应为 HH:mm，例如 09:00",
+		})
+		return
+	}
+
+	if err := db.SaveAppSettings(sqlDB, db.AppSettings{
+		ServerBaseURL: p.ServerBaseURL,
+		ReminderTime:  reminderTime,
+	}); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
 		})

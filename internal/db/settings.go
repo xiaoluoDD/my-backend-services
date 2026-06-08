@@ -6,10 +6,12 @@ import (
 )
 
 const SettingServerBaseURL = "server_base_url"
+const SettingReminderTime = "reminder_time"
 
 // AppSettings 客户端可配置项。
 type AppSettings struct {
 	ServerBaseURL string `json:"server_base_url"`
+	ReminderTime  string `json:"reminder_time"`
 	UpdatedAt     string `json:"updated_at,omitempty"`
 }
 
@@ -21,6 +23,7 @@ func GetAppSettings(db *sql.DB) (AppSettings, error) {
 	}
 	return AppSettings{
 		ServerBaseURL: m[SettingServerBaseURL],
+		ReminderTime:  m[SettingReminderTime],
 		UpdatedAt:     m["_updated_at"],
 	}, nil
 }
@@ -38,6 +41,9 @@ func SaveAppSettings(db *sql.DB, s AppSettings) error {
 		if err := upsertAppSetting(tx, SettingServerBaseURL, s.ServerBaseURL, now); err != nil {
 			return err
 		}
+	}
+	if err := upsertAppSetting(tx, SettingReminderTime, s.ReminderTime, now); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
