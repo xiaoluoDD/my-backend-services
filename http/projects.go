@@ -27,10 +27,12 @@ type projectPayload struct {
 
 type projectView struct {
 	db.Project
-	Members          []db.ProjectMember `json:"members"`
-	TaskSummary      string             `json:"task_summary"`
-	SubtaskStartDate string             `json:"subtask_start_date"`
-	SubtaskEndDate   string             `json:"subtask_end_date"`
+	Members             []db.ProjectMember `json:"members"`
+	TaskSummary         string             `json:"task_summary"`
+	SubtaskStartDate    string             `json:"subtask_start_date"`
+	SubtaskEndDate      string             `json:"subtask_end_date"`
+	SubtaskCount        int                `json:"subtask_count"`
+	SubtaskAllCompleted bool               `json:"subtask_all_completed"`
 }
 
 func (p projectPayload) toModel() db.Project {
@@ -55,11 +57,13 @@ func projectToView(p db.Project, members []db.ProjectMember, stats db.ProjectSub
 		members = []db.ProjectMember{}
 	}
 	return projectView{
-		Project:          p,
-		Members:          members,
-		TaskSummary:      stats.TaskSummary,
-		SubtaskStartDate: stats.SubtaskStartDate,
-		SubtaskEndDate:   stats.SubtaskEndDate,
+		Project:             p,
+		Members:             members,
+		TaskSummary:         stats.TaskSummary,
+		SubtaskStartDate:    stats.SubtaskStartDate,
+		SubtaskEndDate:      stats.SubtaskEndDate,
+		SubtaskCount:        stats.SubtaskCount,
+		SubtaskAllCompleted: stats.SubtaskAllCompleted,
 	}
 }
 

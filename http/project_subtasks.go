@@ -58,6 +58,9 @@ func listProjectSubtasks(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []db.ProjectSubtask{}
 	}
+	for i := range list {
+		list[i].Status = db.EffectiveSubtaskStatus(list[i])
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "count": len(list), "project_id": projectID, "subtasks": list,
 	})
@@ -86,6 +89,7 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, _ := db.GetProjectSubtask(sqlDB, id)
+	created.Status = db.EffectiveSubtaskStatus(created)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "子任务已创建", "subtask": created,
 	})
@@ -106,6 +110,7 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated, _ := db.GetProjectSubtask(sqlDB, s.ID)
+	updated.Status = db.EffectiveSubtaskStatus(updated)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "子任务已更新", "subtask": updated,
 	})
