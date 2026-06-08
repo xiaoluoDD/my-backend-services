@@ -22,7 +22,7 @@ type projectPayload struct {
 	StartDate     string             `json:"start_date"`
 	EndDate       string             `json:"end_date"`
 	Tasks         string             `json:"tasks"`
-	Members       []db.ProjectMember `json:"members"`
+	Members       *[]db.ProjectMember `json:"members"`
 }
 
 type projectView struct {
@@ -121,6 +121,13 @@ func decodeProjectPayload(r *http.Request) (projectPayload, error) {
 	}
 	err = json.Unmarshal(body, &p)
 	return p, err
+}
+
+func derefMembers(members *[]db.ProjectMember) []db.ProjectMember {
+	if members == nil {
+		return nil
+	}
+	return *members
 }
 
 func loadProjectView(id int64) (projectView, error) {
@@ -248,7 +255,7 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := db.ReplaceProjectMembers(sqlDB, id, p.Members); err != nil {
+	if err := db.ReplaceProjectMembers(sqlDB, id, derefMembers(p.Members)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
 		})
@@ -285,11 +292,13 @@ func updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := db.ReplaceProjectMembers(sqlDB, p.ID, p.Members); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"ok": false, "error": err.Error(),
-		})
-		return
+	if p.Members != nil {
+		if err := db.ReplaceProjectMembers(sqlDB, p.ID, *p.Members); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"ok": false, "error": err.Error(),
+			})
+			return
+		}
 	}
 
 	updated, _ := loadProjectView(p.ID)

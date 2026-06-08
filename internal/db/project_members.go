@@ -78,7 +78,10 @@ func ReplaceProjectMembers(db *sql.DB, projectID int64, members []ProjectMember)
 			continue
 		}
 		if _, err := tx.Exec(
-			`INSERT INTO project_members (project_id, userid, name, source) VALUES (?, ?, ?, ?)`,
+			`INSERT INTO project_members (project_id, userid, name, source) VALUES (?, ?, ?, ?)
+			 ON CONFLICT(project_id, userid) DO UPDATE SET
+			   name=excluded.name,
+			   source=excluded.source`,
 			projectID, m.UserID, m.Name, ProjectMemberSourceExplicit,
 		); err != nil {
 			return err
