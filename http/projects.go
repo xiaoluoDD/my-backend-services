@@ -262,6 +262,8 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	notifyNewExplicitProjectMembers(id, derefMembers(p.Members))
+
 	created, _ := loadProjectView(id)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "项目已创建", "project": created,
@@ -293,12 +295,14 @@ func updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if p.Members != nil {
+		beforeExplicit, _ := db.ListExplicitProjectMembers(sqlDB, p.ID)
 		if err := db.ReplaceProjectMembers(sqlDB, p.ID, *p.Members); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"ok": false, "error": err.Error(),
 			})
 			return
 		}
+		notifyNewExplicitProjectMembers(p.ID, addedProjectMembers(beforeExplicit, *p.Members))
 	}
 
 	updated, _ := loadProjectView(p.ID)

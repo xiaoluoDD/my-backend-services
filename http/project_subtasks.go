@@ -88,6 +88,8 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	wasOnProject := projectMemberSnapshot(s.ProjectID)
+
 	id, err := db.CreateProjectSubtask(sqlDB, s)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -108,6 +110,8 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	notifyNewSubtaskMembers(s.ProjectID, created, created.Members, wasOnProject)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "子任务已创建", "subtask": created,
 	})
@@ -128,6 +132,9 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	wasOnProject := projectMemberSnapshot(s.ProjectID)
+	addedMembers := addedSubtaskMembers(before.Members, s.Members)
+
 	if err := db.UpdateProjectSubtask(sqlDB, s); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": err.Error(),
@@ -148,6 +155,8 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	notifyNewSubtaskMembers(s.ProjectID, updated, addedMembers, wasOnProject)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "子任务已更新", "subtask": updated,
 	})

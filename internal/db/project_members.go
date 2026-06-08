@@ -17,6 +17,26 @@ type ProjectMember struct {
 	DepartmentName string `json:"department_name,omitempty"`
 }
 
+// ListExplicitProjectMembers 返回项目编辑时指定的成员（不含子任务同步成员）。
+func ListExplicitProjectMembers(db *sql.DB, projectID int64) ([]ProjectMember, error) {
+	return listProjectMembersBySource(db, projectID, ProjectMemberSourceExplicit)
+}
+
+// ProjectMemberUserIDSet 返回项目成员 userid 集合（explicit + 子任务 union）。
+func ProjectMemberUserIDSet(db *sql.DB, projectID int64) (map[string]struct{}, error) {
+	members, err := ListProjectMembers(db, projectID)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]struct{}, len(members))
+	for _, m := range members {
+		if m.UserID != "" {
+			set[m.UserID] = struct{}{}
+		}
+	}
+	return set, nil
+}
+
 // ListProjectMembers 返回项目成员（项目编辑成员 + 全部子任务成员，去重展示）。
 func ListProjectMembers(db *sql.DB, projectID int64) ([]ProjectMember, error) {
 	explicit, err := listProjectMembersBySource(db, projectID, ProjectMemberSourceExplicit)

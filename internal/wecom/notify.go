@@ -2,6 +2,7 @@ package wecom
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -322,4 +323,119 @@ func NotifyProjectManagerEx(p db.Project, stats db.ProjectSubtaskStats, extra st
 func NotifyProjectMembersEx(p db.Project, members []db.ProjectMember, stats db.ProjectSubtaskStats, extra string) (msgID string, recipients []db.ProjectMember, content string, err error) {
 	_ = stats
 	return NotifyProjectMembers(p, members, extra)
+}
+
+// JoinSubtaskBrief 加入通知中的子任务摘要。
+type JoinSubtaskBrief struct {
+	Content          string
+	Status           string
+	PlannedStartDate string
+	PlannedEndDate   string
+}
+
+// FormatMemberJoinProject 成员加入项目通知。
+func FormatMemberJoinProject(p db.Project, stats db.ProjectSubtaskStats) string {
+	var b strings.Builder
+	b.WriteString("📢 项目加入通知\n")
+	b.WriteString("您已被加入以下项目：\n")
+	b.WriteString("════════════════\n")
+	writeJoinProjectBlock(&b, p, stats, nil)
+	b.WriteString("════════════════\n")
+	b.WriteString("发送时间：" + time.Now().Format("2006-01-02 15:04:05"))
+	return b.String()
+}
+
+// FormatMemberJoinSubtask 成员加入子任务通知（已在项目中）。
+func FormatMemberJoinSubtask(p db.Project, sub JoinSubtaskBrief) string {
+	var b strings.Builder
+	b.WriteString("📢 子任务加入通知\n")
+	b.WriteString("您已被加入以下子任务：\n")
+	b.WriteString("════════════════\n")
+	writeJoinProjectBlock(&b, p, db.ProjectSubtaskStats{}, nil)
+	b.WriteByte('\n')
+	writeJoinSubtaskBlock(&b, 1, sub)
+	b.WriteString("════════════════\n")
+	b.WriteString("发送时间：" + time.Now().Format("2006-01-02 15:04:05"))
+	return b.String()
+}
+
+// FormatMemberJoinProjectAndSubtasks 同时加入项目与子任务（合成一条摘要）。
+func FormatMemberJoinProjectAndSubtasks(p db.Project, stats db.ProjectSubtaskStats, subtasks []JoinSubtaskBrief) string {
+	var b strings.Builder
+	b.WriteString("📢 项目加入通知\n")
+	b.WriteString("您已被加入以下项目及子任务：\n")
+	b.WriteString("════════════════\n")
+	writeJoinProjectBlock(&b, p, stats, subtasks)
+	b.WriteString("════════════════\n")
+	b.WriteString("发送时间：" + time.Now().Format("2006-01-02 15:04:05"))
+	return b.String()
+}
+
+func writeJoinProjectBlock(b *strings.Builder, p db.Project, stats db.ProjectSubtaskStats, subtasks []JoinSubtaskBrief) {
+	line := projectDigestFromProject(p, "", 0)
+	b.WriteString("▎")
+	b.WriteString(formatProjectTitle(line.Name, line.WorkNo))
+	b.WriteByte('\n')
+	if line.ManagerName != "" {
+		b.WriteString(fmt.Sprintf("  负责人：%s\n", line.ManagerName))
+	}
+	if line.Status != "" {
+		b.WriteString(fmt.Sprintf("  状态：%s\n", line.Status))
+	}
+	if start := strings.TrimSpace(p.StartDate); start != "" {
+		b.WriteString(fmt.Sprintf("  启动日期：%s\n", start))
+	}
+	if end := strings.TrimSpace(stats.SubtaskEndDate); end != "" {
+		b.WriteString(fmt.Sprintf("  计划完结：%s\n", end))
+	} else if end := strings.TrimSpace(p.EndDate); end != "" {
+		b.WriteString(fmt.Sprintf("  实际完结：%s\n", end))
+	}
+	if summary := strings.TrimSpace(stats.TaskSummary); summary != "" {
+		b.WriteString(fmt.Sprintf("  任务概要：%s\n", summary))
+	}
+	if len(subtasks) > 0 {
+		b.WriteString("\n  子任务：\n")
+		for i, sub := range subtasks {
+			writeJoinSubtaskBlock(b, i+1, sub)
+			if i+1 < len(subtasks) {
+				b.WriteByte('\n')
+			}
+		}
+	}
+}
+
+func writeJoinSubtaskBlock(b *strings.Builder, index int, sub JoinSubtaskBrief) {
+	b.WriteString(fmt.Sprintf("  %d. 任务：%s\n", index, emptyDash(sub.Content)))
+	if sub.Status != "" {
+		b.WriteString(fmt.Sprintf("     状态：%s\n", sub.Status))
+	}
+	if d := strings.TrimSpace(sub.PlannedStartDate); d != "" {
+		b.WriteString(fmt.Sprintf("     计划开始：%s\n", d))
+	}
+	if d := strings.TrimSpace(sub.PlannedEndDate); d != "" {
+		b.WriteString(fmt.Sprintf("     计划完结：%s\n", d))
+	}
+}
+
+func JoinSubtaskBriefFromModel(s db.ProjectSubtask) JoinSubtaskBrief {
+	return JoinSubtaskBrief{
+		Content:          s.Content,
+		Status:           db.EffectiveSubtaskStatus(s),
+		PlannedStartDate: s.PlannedStartDate,
+		PlannedEndDate:   s.PlannedEndDate,
+	}
+}
+
+// NotifyMemberJoinAsync 异步发送加入通知（失败仅记日志，不影响 API）。
+func NotifyMemberJoinAsync(userID, content string) {
+	if userID == "" || strings.TrimSpace(content) == "" {
+		return
+	}
+	go func() {
+		if _, err := NotifyUsers([]string{userID}, content); err != nil {
+			slog.Warn("member join notify failed", "userid", userID, "err", err)
+			return
+		}
+		slog.Info("member join notify sent", "userid", userID)
+	}()
 }
