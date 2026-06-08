@@ -11,8 +11,10 @@ import (
 )
 
 type settingsPayload struct {
-	ServerBaseURL string `json:"server_base_url"`
-	ReminderTime  string `json:"reminder_time"`
+	ServerBaseURL            string `json:"server_base_url"`
+	ReminderTime             string `json:"reminder_time"`
+	ProjectStartReminderDays int    `json:"project_start_reminder_days"`
+	ProjectEndReminderDays   int    `json:"project_end_reminder_days"`
 }
 
 func normalizeBaseURL(raw string) string {
@@ -98,8 +100,10 @@ func putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := db.SaveAppSettings(sqlDB, db.AppSettings{
-		ServerBaseURL: p.ServerBaseURL,
-		ReminderTime:  reminderTime,
+		ServerBaseURL:            p.ServerBaseURL,
+		ReminderTime:             reminderTime,
+		ProjectStartReminderDays: db.NormalizeReminderDays(p.ProjectStartReminderDays),
+		ProjectEndReminderDays:   db.NormalizeReminderDays(p.ProjectEndReminderDays),
 	}); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),

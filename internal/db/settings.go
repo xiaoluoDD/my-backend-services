@@ -2,17 +2,26 @@ package db
 
 import (
 	"database/sql"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const SettingServerBaseURL = "server_base_url"
 const SettingReminderTime = "reminder_time"
+const SettingProjectStartReminderDays = "project_start_reminder_days"
+const SettingProjectEndReminderDays = "project_end_reminder_days"
+
+const defaultProjectStartReminderDays = 1
+const defaultProjectEndReminderDays = 3
 
 // AppSettings 客户端可配置项。
 type AppSettings struct {
-	ServerBaseURL string `json:"server_base_url"`
-	ReminderTime  string `json:"reminder_time"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
+	ServerBaseURL            string `json:"server_base_url"`
+	ReminderTime             string `json:"reminder_time"`
+	ProjectStartReminderDays int    `json:"project_start_reminder_days"`
+	ProjectEndReminderDays   int    `json:"project_end_reminder_days"`
+	UpdatedAt                string `json:"updated_at,omitempty"`
 }
 
 // GetAppSettings 读取应用设置（缺失项为空字符串）。
@@ -22,9 +31,11 @@ func GetAppSettings(db *sql.DB) (AppSettings, error) {
 		return AppSettings{}, err
 	}
 	return AppSettings{
-		ServerBaseURL: m[SettingServerBaseURL],
-		ReminderTime:  m[SettingReminderTime],
-		UpdatedAt:     m["_updated_at"],
+		ServerBaseURL:            m[SettingServerBaseURL],
+		ReminderTime:             m[SettingReminderTime],
+		ProjectStartReminderDays: parseReminderDays(m[SettingProjectStartReminderDays], defaultProjectStartReminderDays),
+		ProjectEndReminderDays:   parseReminderDays(m[SettingProjectEndReminderDays], defaultProjectEndReminderDays),
+		UpdatedAt:                m["_updated_at"],
 	}, nil
 }
 
@@ -45,7 +56,36 @@ func SaveAppSettings(db *sql.DB, s AppSettings) error {
 	if err := upsertAppSetting(tx, SettingReminderTime, s.ReminderTime, now); err != nil {
 		return err
 	}
+	if err := upsertAppSetting(tx, SettingProjectStartReminderDays, strconv.Itoa(NormalizeReminderDays(s.ProjectStartReminderDays)), now); err != nil {
+		return err
+	}
+	if err := upsertAppSetting(tx, SettingProjectEndReminderDays, strconv.Itoa(NormalizeReminderDays(s.ProjectEndReminderDays)), now); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+func parseReminderDays(raw string, defaultVal int) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultVal
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultVal
+	}
+	return NormalizeReminderDays(n)
+}
+
+// NormalizeReminderDays 将提前天数限制在 0–365。
+func NormalizeReminderDays(n int) int {
+	if n < 0 {
+		return 0
+	}
+	if n > 365 {
+		return 365
+	}
+	return n
 }
 
 func listAppSettingsMap(db *sql.DB) (map[string]string, error) {
