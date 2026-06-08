@@ -123,6 +123,14 @@ func migrate(db *sql.DB) error {
 			value TEXT NOT NULL DEFAULT '',
 			updated_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS reminder_sent (
+			project_id INTEGER NOT NULL,
+			kind TEXT NOT NULL,
+			sent_date TEXT NOT NULL,
+			sent_at TEXT NOT NULL,
+			PRIMARY KEY (project_id, kind, sent_date)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_reminder_sent_date ON reminder_sent(sent_date)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {

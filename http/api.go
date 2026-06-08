@@ -11,6 +11,7 @@ import (
 
 	"github.com/xiaoluoDD/my-backend-services/internal/db"
 	"github.com/xiaoluoDD/my-backend-services/internal/logger"
+	"github.com/xiaoluoDD/my-backend-services/internal/reminder"
 	"github.com/xiaoluoDD/my-backend-services/internal/wecom"
 )
 
@@ -41,6 +42,8 @@ func main() {
 	}
 	defer sqlDB.Close()
 	appLog.Info("database ready", "path", db.FilePath())
+
+	reminder.StartScheduler(sqlDB)
 
 	appLog.Info("starting http api", "addr", listenAddr())
 
@@ -175,6 +178,7 @@ func main() {
 	http.HandleFunc("/api/db/download", handleDBDownload)
 	http.HandleFunc("/api/wecom/send-group", handleWecomSendGroup)
 	http.HandleFunc("/api/wecom/notify-project", handleWecomNotifyProject)
+	http.HandleFunc("/api/reminder/run", handleReminderRun)
 
 	http.HandleFunc("/api/logs", handleLogList)
 	http.HandleFunc("/api/logs/download", handleLogDownload)
@@ -194,6 +198,7 @@ func main() {
 		"db_download", "GET /api/db/download",
 		"wecom_send_group", "POST /api/wecom/send-group",
 		"wecom_notify_project", "POST /api/wecom/notify-project",
+		"reminder_run", "GET|POST /api/reminder/run",
 		"logs", "GET /api/logs",
 		"logs_download", "GET /api/logs/download?name=",
 	)

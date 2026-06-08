@@ -10,6 +10,11 @@ import (
 
 // FormatProjectReminder 生成带项目关键信息的提醒正文。
 func FormatProjectReminder(p db.Project, extra string) string {
+	return FormatProjectReminderEx(p, db.ProjectSubtaskStats{}, extra)
+}
+
+// FormatProjectReminderEx 生成提醒正文，优先使用子任务汇总信息。
+func FormatProjectReminderEx(p db.Project, stats db.ProjectSubtaskStats, extra string) string {
 	var b strings.Builder
 	b.WriteString("📢 项目提醒\n")
 	if extra != "" {
@@ -33,15 +38,48 @@ func FormatProjectReminder(p db.Project, extra string) string {
 		}
 		b.WriteString(fmt.Sprintf("负责人：%s\n", mgr))
 	}
-	if p.StartDate != "" || p.EndDate != "" {
-		b.WriteString(fmt.Sprintf("周期：%s ～ %s\n", emptyDash(p.StartDate), emptyDash(p.EndDate)))
+
+	startDate := stats.SubtaskStartDate
+	if startDate == "" {
+		startDate = p.StartDate
 	}
-	if strings.TrimSpace(p.Tasks) != "" {
-		b.WriteString(fmt.Sprintf("项目任务：%s\n", strings.TrimSpace(p.Tasks)))
+	endDate := stats.SubtaskEndDate
+	if endDate == "" {
+		endDate = p.EndDate
+	}
+	if startDate != "" || endDate != "" {
+		b.WriteString(fmt.Sprintf("计划周期：%s ～ %s\n", emptyDash(startDate), emptyDash(endDate)))
+	}
+
+	tasks := strings.TrimSpace(stats.TaskSummary)
+	if tasks == "" {
+		tasks = strings.TrimSpace(p.Tasks)
+	}
+	if tasks != "" {
+		b.WriteString(fmt.Sprintf("项目任务：%s\n", tasks))
 	}
 	b.WriteString("────────────────\n")
 	b.WriteString("发送时间：" + time.Now().Format("2006-01-02 15:04:05"))
 	return b.String()
+}
+
+// FormatScheduledReminderHeader 定时提醒的标题说明行。
+func FormatScheduledReminderHeader(kind string, daysBefore int, eventDate string) string {
+	dateText := emptyDash(eventDate)
+	switch kind {
+	case db.ReminderKindStart:
+		if daysBefore == 0 {
+			return fmt.Sprintf("【项目启动提醒】今日为计划启动日（%s）", dateText)
+		}
+		return fmt.Sprintf("【项目启动提醒】距离计划启动还有 %d 天（计划启动：%s）", daysBefore, dateText)
+	case db.ReminderKindEnd:
+		if daysBefore == 0 {
+			return fmt.Sprintf("【项目完结提醒】今日为计划完结日（%s）", dateText)
+		}
+		return fmt.Sprintf("【项目完结提醒】距离计划完结还有 %d 天（计划完结：%s）", daysBefore, dateText)
+	default:
+		return ""
+	}
 }
 
 func emptyDash(s string) string {
@@ -53,6 +91,11 @@ func emptyDash(s string) string {
 
 // NotifyProjectMembers 向项目内成员（负责人 + 关联成员）发送提醒。
 func NotifyProjectMembers(p db.Project, members []db.ProjectMember, extra string) (msgID string, recipients []db.ProjectMember, content string, err error) {
+	return NotifyProjectMembersEx(p, members, db.ProjectSubtaskStats{}, extra)
+}
+
+// NotifyProjectMembersEx 发送提醒，正文中可包含子任务汇总信息。
+func NotifyProjectMembersEx(p db.Project, members []db.ProjectMember, stats db.ProjectSubtaskStats, extra string) (msgID string, recipients []db.ProjectMember, content string, err error) {
 	recipients = db.ProjectRecipients(p, members)
 	if len(recipients) == 0 {
 		return "", nil, "", fmt.Errorf("该项目未配置负责人或项目成员，请先编辑项目")
@@ -68,7 +111,7 @@ func NotifyProjectMembers(p db.Project, members []db.ProjectMember, extra string
 		userids = append(userids, r.UserID)
 	}
 
-	content = FormatProjectReminder(p, extra)
+	content = FormatProjectReminderEx(p, stats, extra)
 	msgID, err = SendTextToUsers(cfg, userids, content)
 	return msgID, recipients, content, err
 }
