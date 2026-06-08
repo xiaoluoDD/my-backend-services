@@ -27,8 +27,10 @@ type projectPayload struct {
 
 type projectView struct {
 	db.Project
-	Members     []db.ProjectMember `json:"members"`
-	TaskSummary string             `json:"task_summary"`
+	Members          []db.ProjectMember `json:"members"`
+	TaskSummary      string             `json:"task_summary"`
+	SubtaskStartDate string             `json:"subtask_start_date"`
+	SubtaskEndDate   string             `json:"subtask_end_date"`
 }
 
 func (p projectPayload) toModel() db.Project {
@@ -48,11 +50,17 @@ func (p projectPayload) toModel() db.Project {
 	}
 }
 
-func projectToView(p db.Project, members []db.ProjectMember, taskSummary string) projectView {
+func projectToView(p db.Project, members []db.ProjectMember, stats db.ProjectSubtaskStats) projectView {
 	if members == nil {
 		members = []db.ProjectMember{}
 	}
-	return projectView{Project: p, Members: members, TaskSummary: taskSummary}
+	return projectView{
+		Project:          p,
+		Members:          members,
+		TaskSummary:      stats.TaskSummary,
+		SubtaskStartDate: stats.SubtaskStartDate,
+		SubtaskEndDate:   stats.SubtaskEndDate,
+	}
 }
 
 func decodeProjectPayload(r *http.Request) (projectPayload, error) {
@@ -77,11 +85,11 @@ func loadProjectView(id int64) (projectView, error) {
 	if err != nil {
 		return projectView{}, err
 	}
-	taskSummary, err := db.SummarizeProjectSubtasks(sqlDB, id)
+	stats, err := db.SummarizeProjectSubtaskStats(sqlDB, id)
 	if err != nil {
 		return projectView{}, err
 	}
-	return projectToView(p, members, taskSummary), nil
+	return projectToView(p, members, stats), nil
 }
 
 func handleProjects(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +141,7 @@ func listProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	views := make([]projectView, 0, len(projects))
-	taskSummaries, err := db.SummarizeAllProjectSubtasks(sqlDB)
+	subtaskStats, err := db.SummarizeAllProjectSubtaskStats(sqlDB)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
@@ -148,7 +156,7 @@ func listProjects(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		views = append(views, projectToView(p, members, taskSummaries[p.ID]))
+		views = append(views, projectToView(p, members, subtaskStats[p.ID]))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{

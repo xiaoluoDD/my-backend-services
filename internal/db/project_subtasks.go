@@ -7,7 +7,13 @@ import (
 	"time"
 )
 
-// ProjectSubtask 项目子任务。
+// ProjectSubtaskStats 子任务汇总信息（列表展示用）。
+type ProjectSubtaskStats struct {
+	TaskSummary      string `json:"task_summary"`
+	SubtaskStartDate string `json:"subtask_start_date"`
+	SubtaskEndDate   string `json:"subtask_end_date"`
+}
+
 type ProjectSubtask struct {
 	ID               int64  `json:"id"`
 	ProjectID        int64  `json:"project_id"`
@@ -152,12 +158,11 @@ func DeleteProjectSubtask(db *sql.DB, id int64) error {
 	return nil
 }
 
-// SummarizeAllProjectSubtasks 按项目汇总子任务内容（多条以「；」连接）。
-func SummarizeAllProjectSubtasks(db *sql.DB) (map[int64]string, error) {
+// SummarizeAllProjectSubtaskStats 按项目汇总子任务内容与日期的计划区间。
+func SummarizeAllProjectSubtaskStats(db *sql.DB) (map[int64]ProjectSubtaskStats, error) {
 	rows, err := db.Query(
-		`SELECT project_id, content
+		`SELECT project_id, content, planned_start_date, planned_end_date
 		 FROM project_subtasks
-		 WHERE content <> ''
 		 ORDER BY project_id, id`,
 	)
 	if err != nil {
@@ -165,31 +170,79 @@ func SummarizeAllProjectSubtasks(db *sql.DB) (map[int64]string, error) {
 	}
 	defer rows.Close()
 
-	out := make(map[int64]string)
+	out := make(map[int64]ProjectSubtaskStats)
 	for rows.Next() {
 		var projectID int64
-		var content string
-		if err := rows.Scan(&projectID, &content); err != nil {
+		var content, plannedStart, plannedEnd string
+		if err := rows.Scan(&projectID, &content, &plannedStart, &plannedEnd); err != nil {
 			return nil, err
 		}
+
+		stats := out[projectID]
 		content = strings.TrimSpace(content)
-		if content == "" {
-			continue
+		if content != "" {
+			if stats.TaskSummary == "" {
+				stats.TaskSummary = content
+			} else {
+				stats.TaskSummary += "；" + content
+			}
 		}
-		if prev, ok := out[projectID]; ok && prev != "" {
-			out[projectID] = prev + "；" + content
-		} else {
-			out[projectID] = content
+		if d := normalizeDateString(plannedStart); d != "" {
+			if stats.SubtaskStartDate == "" || d < stats.SubtaskStartDate {
+				stats.SubtaskStartDate = d
+			}
 		}
+		if d := normalizeDateString(plannedEnd); d != "" {
+			if stats.SubtaskEndDate == "" || d > stats.SubtaskEndDate {
+				stats.SubtaskEndDate = d
+			}
+		}
+		out[projectID] = stats
 	}
 	return out, rows.Err()
 }
 
+func normalizeDateString(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	layouts := []string{"2006-01-02", "2006-1-2", "2006-1-02", "2006-01-2"}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.Format("2006-01-02")
+		}
+	}
+	return ""
+}
+
+// SummarizeAllProjectSubtasks 按项目汇总子任务内容（多条以「；」连接）。
+func SummarizeAllProjectSubtasks(db *sql.DB) (map[int64]string, error) {
+	all, err := SummarizeAllProjectSubtaskStats(db)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]string, len(all))
+	for id, stats := range all {
+		out[id] = stats.TaskSummary
+	}
+	return out, nil
+}
+
 // SummarizeProjectSubtasks 返回单个项目的子任务内容汇总。
 func SummarizeProjectSubtasks(db *sql.DB, projectID int64) (string, error) {
-	all, err := SummarizeAllProjectSubtasks(db)
+	all, err := SummarizeAllProjectSubtaskStats(db)
 	if err != nil {
 		return "", err
+	}
+	return all[projectID].TaskSummary, nil
+}
+
+// SummarizeProjectSubtaskStats 返回单个项目的子任务汇总。
+func SummarizeProjectSubtaskStats(db *sql.DB, projectID int64) (ProjectSubtaskStats, error) {
+	all, err := SummarizeAllProjectSubtaskStats(db)
+	if err != nil {
+		return ProjectSubtaskStats{}, err
 	}
 	return all[projectID], nil
 }
