@@ -58,6 +58,32 @@ func ListSubtaskMembersMapByProject(db *sql.DB, projectID int64) (map[int64][]Pr
 	return out, rows.Err()
 }
 
+// ListAllSubtaskMembersMap 返回全部子任务的成员映射。
+func ListAllSubtaskMembersMap(db *sql.DB) (map[int64][]ProjectMember, error) {
+	rows, err := db.Query(
+		`SELECT sm.subtask_id, sm.userid, sm.name, COALESCE(d.name, u.departments, '')
+		 FROM project_subtask_members sm
+		 LEFT JOIN app_users u ON sm.userid = u.userid
+		 LEFT JOIN departments d ON u.department_id = d.id
+		 ORDER BY sm.subtask_id, sm.name, sm.userid`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[int64][]ProjectMember)
+	for rows.Next() {
+		var subtaskID int64
+		var m ProjectMember
+		if err := rows.Scan(&subtaskID, &m.UserID, &m.Name, &m.DepartmentName); err != nil {
+			return nil, err
+		}
+		out[subtaskID] = append(out[subtaskID], m)
+	}
+	return out, rows.Err()
+}
+
 // ListSubtaskMembersUnionByProject 返回项目下所有子任务成员（去重）。
 func ListSubtaskMembersUnionByProject(db *sql.DB, projectID int64) ([]ProjectMember, error) {
 	if projectID <= 0 {

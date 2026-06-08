@@ -44,7 +44,8 @@ func logSchedulerStarted(sqlDB *sql.DB) {
 	slog.Info("reminder · scheduler started",
 		"reminder_time", reminderTime,
 		"tz", time.Now().Format("MST"),
-		"start_days", settings.ProjectStartReminderDays,
+		"start_days", settings.StartReminderDays(),
+		"end_days", settings.EndReminderDays(),
 	)
 }
 
@@ -109,7 +110,8 @@ func LogSettingsUpdated(settings db.AppSettings) {
 	}
 	slog.Info("reminder · settings updated",
 		"reminder_time", settings.ReminderTime,
-		"start_days", settings.ProjectStartReminderDays,
+		"start_days", settings.StartReminderDays(),
+		"end_days", settings.EndReminderDays(),
 		"server_now", time.Now().Format("15:04"),
 		"tz", time.Now().Format("MST"),
 	)

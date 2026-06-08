@@ -24,6 +24,16 @@ type AppSettings struct {
 	UpdatedAt                string `json:"updated_at,omitempty"`
 }
 
+// StartReminderDays 项目/子任务启动类提醒提前天数。
+func (s AppSettings) StartReminderDays() int {
+	return NormalizeReminderDays(s.ProjectStartReminderDays)
+}
+
+// EndReminderDays 项目完结类提醒提前天数。
+func (s AppSettings) EndReminderDays() int {
+	return NormalizeReminderDays(s.ProjectEndReminderDays)
+}
+
 // GetAppSettings 读取应用设置（缺失项为空字符串）。
 func GetAppSettings(db *sql.DB) (AppSettings, error) {
 	m, err := listAppSettingsMap(db)

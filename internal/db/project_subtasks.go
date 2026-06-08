@@ -57,6 +57,39 @@ func ListProjectSubtasks(db *sql.DB, projectID int64) ([]ProjectSubtask, error) 
 	return scanProjectSubtasks(rows)
 }
 
+// ListAllProjectSubtasksWithMembers 返回全部子任务并附带成员。
+func ListAllProjectSubtasksWithMembers(db *sql.DB) ([]ProjectSubtask, error) {
+	rows, err := db.Query(
+		`SELECT id, project_id, content, owner_userid, owner_name, status,
+		        planned_start_date, actual_start_date, planned_end_date, actual_end_date,
+		        remark, updated_at
+		 FROM project_subtasks
+		 ORDER BY project_id, id`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list, err := scanProjectSubtasks(rows)
+	if err != nil || len(list) == 0 {
+		return list, err
+	}
+
+	memberMap, err := ListAllSubtaskMembersMap(db)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		list[i].Members = memberMap[list[i].ID]
+		if list[i].Members == nil {
+			list[i].Members = []ProjectMember{}
+		}
+		SyncSubtaskStatus(&list[i])
+	}
+	return list, nil
+}
+
 func scanProjectSubtasks(rows *sql.Rows) ([]ProjectSubtask, error) {
 	var list []ProjectSubtask
 	for rows.Next() {

@@ -139,6 +139,22 @@ func migrate(db *sql.DB) error {
 			PRIMARY KEY (project_id, kind, sent_date)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_reminder_sent_date ON reminder_sent(sent_date)`,
+		`CREATE TABLE IF NOT EXISTS subtask_reminder_sent (
+			subtask_id INTEGER NOT NULL,
+			kind TEXT NOT NULL,
+			sent_date TEXT NOT NULL,
+			sent_at TEXT NOT NULL,
+			PRIMARY KEY (subtask_id, kind, sent_date)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_subtask_reminder_sent_date ON subtask_reminder_sent(sent_date)`,
+		`CREATE TABLE IF NOT EXISTS user_reminder_sent (
+			userid TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			sent_date TEXT NOT NULL,
+			sent_at TEXT NOT NULL,
+			PRIMARY KEY (userid, kind, sent_date)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_reminder_sent_date ON user_reminder_sent(sent_date)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
