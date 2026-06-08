@@ -241,6 +241,9 @@ func runSubtaskDigests(
 		if !ok {
 			continue
 		}
+		if db.EffectiveProjectStatus(project) == db.ProjectStatusCompleted {
+			continue
+		}
 
 		item := subtaskDigestItem{
 			Subtask:       st,
