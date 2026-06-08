@@ -20,13 +20,14 @@ type ProjectDigestLine struct {
 
 // SubtaskDigestLine 子任务摘要行。
 type SubtaskDigestLine struct {
-	ProjectName     string
-	WorkNo          string
-	ManagerName     string
-	Content         string
-	EventDate       string
-	PlannedEndDate  string
-	DaysRemaining   int
+	ProjectName      string
+	WorkNo           string
+	ManagerName      string
+	Content          string
+	PlannedStartDate string
+	EventDate        string
+	PlannedEndDate   string
+	DaysRemaining    int
 }
 
 // FormatProjectReminder 生成项目提醒正文。
@@ -108,11 +109,40 @@ func formatProjectBlock(line ProjectDigestLine, eventLabel string) string {
 	return b.String()
 }
 
-// FormatManagerSubtaskDigest 项目负责人：子任务计划开始摘要。
+// FormatManagerSubtaskStartDigest 项目负责人：子任务计划开始摘要。
+func FormatManagerSubtaskStartDigest(projectName, workNo, managerName string, lines []SubtaskDigestLine) string {
+	return formatManagerSubtaskDigest("📢 子任务提醒 · 计划开始", projectName, workNo, managerName, lines, formatSubtaskStartBlock)
+}
+
+// FormatMemberSubtaskStartDigest 子项目成员：个人子任务计划开始摘要。
+func FormatMemberSubtaskStartDigest(lines []SubtaskDigestLine) string {
+	return formatMemberSubtaskDigest("📢 子任务提醒 · 计划开始", lines, formatSubtaskStartBlock)
+}
+
+// FormatManagerSubtaskEndDigest 项目负责人：子任务计划完结摘要。
+func FormatManagerSubtaskEndDigest(projectName, workNo, managerName string, lines []SubtaskDigestLine) string {
+	return formatManagerSubtaskDigest("📢 子任务提醒 · 计划完结", projectName, workNo, managerName, lines, formatSubtaskEndBlock)
+}
+
+// FormatMemberSubtaskEndDigest 子项目成员：个人子任务计划完结摘要。
+func FormatMemberSubtaskEndDigest(lines []SubtaskDigestLine) string {
+	return formatMemberSubtaskDigest("📢 子任务提醒 · 计划完结", lines, formatSubtaskEndBlock)
+}
+
+// FormatManagerSubtaskDigest 兼容旧名。
 func FormatManagerSubtaskDigest(projectName, workNo, managerName string, lines []SubtaskDigestLine) string {
+	return FormatManagerSubtaskStartDigest(projectName, workNo, managerName, lines)
+}
+
+// FormatMemberSubtaskDigest 兼容旧名。
+func FormatMemberSubtaskDigest(lines []SubtaskDigestLine) string {
+	return FormatMemberSubtaskStartDigest(lines)
+}
+
+func formatManagerSubtaskDigest(title, projectName, workNo, managerName string, lines []SubtaskDigestLine, blockFn func(int, SubtaskDigestLine) string) string {
 	var b strings.Builder
-	b.WriteString("📢 子任务提醒 · 计划开始\n")
-	b.WriteString("════════════════\n")
+	b.WriteString(title)
+	b.WriteString("\n════════════════\n")
 	b.WriteString("▎")
 	b.WriteString(formatProjectTitle(projectName, workNo))
 	b.WriteByte('\n')
@@ -124,31 +154,38 @@ func FormatManagerSubtaskDigest(projectName, workNo, managerName string, lines [
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(formatSubtaskBlock(i+1, line))
+		b.WriteString(blockFn(i+1, line))
 	}
 	b.WriteString("\n════════════════\n")
 	b.WriteString("发送时间：" + time.Now().Format("2006-01-02 15:04:05"))
 	return b.String()
 }
 
-// FormatMemberSubtaskDigest 子项目成员：个人子任务摘要。
-func FormatMemberSubtaskDigest(lines []SubtaskDigestLine) string {
+func formatMemberSubtaskDigest(title string, lines []SubtaskDigestLine, blockFn func(int, SubtaskDigestLine) string) string {
 	var b strings.Builder
-	b.WriteString("📢 子任务提醒 · 计划开始\n")
-	b.WriteString("════════════════\n")
+	b.WriteString(title)
+	b.WriteString("\n════════════════\n")
 	b.WriteString(fmt.Sprintf("共 %d 项需关注\n\n", len(lines)))
 	for i, line := range lines {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(formatSubtaskBlock(i+1, line))
+		b.WriteString(blockFn(i+1, line))
 	}
 	b.WriteString("\n════════════════\n")
 	b.WriteString("发送时间：" + time.Now().Format("2006-01-02 15:04:05"))
 	return b.String()
 }
 
-func formatSubtaskBlock(index int, line SubtaskDigestLine) string {
+func formatSubtaskStartBlock(index int, line SubtaskDigestLine) string {
+	return formatSubtaskBlock(index, line, "计划开始", line.EventDate, line.DaysRemaining, true)
+}
+
+func formatSubtaskEndBlock(index int, line SubtaskDigestLine) string {
+	return formatSubtaskBlock(index, line, "计划完结", line.EventDate, line.DaysRemaining, false)
+}
+
+func formatSubtaskBlock(index int, line SubtaskDigestLine, eventLabel, eventDate string, daysRemaining int, showPlannedEnd bool) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("  %d. ", index))
 	if line.ProjectName != "" {
@@ -160,14 +197,19 @@ func formatSubtaskBlock(index int, line SubtaskDigestLine) string {
 	}
 	content := emptyDash(line.Content)
 	b.WriteString(fmt.Sprintf("     任务：%s\n", content))
-	if line.EventDate != "" {
-		b.WriteString(fmt.Sprintf("     计划开始：%s\n", line.EventDate))
-		b.WriteString(fmt.Sprintf("     ⏰ %s\n", formatCountdown(line.DaysRemaining, line.EventDate)))
+	if plannedStart := strings.TrimSpace(line.PlannedStartDate); plannedStart != "" && !showPlannedEnd {
+		b.WriteString(fmt.Sprintf("     计划开始：%s\n", plannedStart))
 	}
-	if plannedEnd := strings.TrimSpace(line.PlannedEndDate); plannedEnd != "" {
-		b.WriteString(fmt.Sprintf("     计划完结：%s\n", plannedEnd))
-	} else {
-		b.WriteString("     计划完结：—\n")
+	if eventDate != "" && eventLabel != "" {
+		b.WriteString(fmt.Sprintf("     %s：%s\n", eventLabel, eventDate))
+		b.WriteString(fmt.Sprintf("     ⏰ %s\n", formatCountdown(daysRemaining, eventDate)))
+	}
+	if showPlannedEnd {
+		if plannedEnd := strings.TrimSpace(line.PlannedEndDate); plannedEnd != "" {
+			b.WriteString(fmt.Sprintf("     计划完结：%s\n", plannedEnd))
+		} else {
+			b.WriteString("     计划完结：—\n")
+		}
 	}
 	return b.String()
 }

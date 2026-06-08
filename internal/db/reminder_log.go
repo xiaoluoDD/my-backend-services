@@ -10,9 +10,13 @@ const (
 	ReminderKindEnd   = "end"
 
 	// 子任务计划开始摘要（方案 C）。
-	ReminderKindSubtaskStartDigestMgr    = "subtask_start_digest_mgr"
+	ReminderKindSubtaskStartDigestMgr      = "subtask_start_digest_mgr"
 	ReminderKindSubtaskStartDigestMember = "subtask_start_digest_member"
-	ReminderKindSubtaskStart             = "subtask_start"
+	ReminderKindSubtaskStart               = "subtask_start"
+	// 子任务计划完结摘要。
+	ReminderKindSubtaskEndDigestMgr      = "subtask_end_digest_mgr"
+	ReminderKindSubtaskEndDigestMember   = "subtask_end_digest_member"
+	ReminderKindSubtaskEnd               = "subtask_end"
 )
 
 // WasReminderSent 检查指定项目在某天是否已发送过某类提醒。

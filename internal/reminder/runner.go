@@ -14,8 +14,10 @@ import (
 type RunResult struct {
 	StartSent            int      `json:"start_sent"`
 	EndSent              int      `json:"end_sent"`
-	SubtaskMgrDigestSent int      `json:"subtask_mgr_digest_sent"`
-	SubtaskMemberDigest  int      `json:"subtask_member_digest_sent"`
+	SubtaskMgrDigestSent   int      `json:"subtask_mgr_digest_sent"`
+	SubtaskMemberDigest    int      `json:"subtask_member_digest_sent"`
+	SubtaskEndMgrDigest  int      `json:"subtask_end_mgr_digest_sent"`
+	SubtaskEndMemberDigest int    `json:"subtask_end_member_digest_sent"`
 	Skipped              int      `json:"skipped"`
 	Errors               []string `json:"errors,omitempty"`
 	RunDate              string   `json:"run_date"`
@@ -64,7 +66,8 @@ func RunDaily(sqlDB *sql.DB, settings db.AppSettings) RunResult {
 	if err != nil {
 		result.Errors = append(result.Errors, err.Error())
 	} else {
-		runSubtaskDigests(sqlDB, subtasks, projectMap, startDays, today, &result)
+		runSubtaskStartDigests(sqlDB, subtasks, projectMap, startDays, today, &result)
+		runSubtaskEndDigests(sqlDB, subtasks, projectMap, endDays, today, &result)
 	}
 
 	slog.Info("reminder · finished",
@@ -72,8 +75,10 @@ func RunDaily(sqlDB *sql.DB, settings db.AppSettings) RunResult {
 		"projects", len(projects),
 		"start", result.StartSent,
 		"end", result.EndSent,
-		"subtask_mgr", result.SubtaskMgrDigestSent,
-		"subtask_member", result.SubtaskMemberDigest,
+		"subtask_start_mgr", result.SubtaskMgrDigestSent,
+		"subtask_start_member", result.SubtaskMemberDigest,
+		"subtask_end_mgr", result.SubtaskEndMgrDigest,
+		"subtask_end_member", result.SubtaskEndMemberDigest,
 		"skipped", result.Skipped,
 		"errors", len(result.Errors),
 	)
@@ -214,7 +219,7 @@ func shouldSendProjectEnd(p db.Project, plannedEnd string, daysBefore int, today
 	return db.ShouldRemindInWindow(plannedEnd, daysBefore, today)
 }
 
-func runSubtaskDigests(
+func runSubtaskStartDigests(
 	sqlDB *sql.DB,
 	subtasks []db.ProjectSubtask,
 	projectMap map[int64]db.Project,
@@ -232,7 +237,7 @@ func runSubtaskDigests(
 		if !shouldSendSubtaskStart(st, startDays, today) {
 			continue
 		}
-		if subtaskReminderBlocked(sqlDB, st.ID, sentDate) {
+		if subtaskReminderBlocked(sqlDB, st.ID, db.ReminderKindSubtaskStart, sentDate) {
 			result.Skipped++
 			continue
 		}
@@ -283,15 +288,15 @@ func runSubtaskDigests(
 		if mgrName == "" {
 			mgrName = project.ManagerUserID
 		}
-		content := wecom.FormatManagerSubtaskDigest(
-			project.Name, project.WorkNo, mgrName, subtaskDigestLines(items))
+		content := wecom.FormatManagerSubtaskStartDigest(
+			project.Name, project.WorkNo, mgrName, subtaskStartDigestLines(items))
 		msgID, err := wecom.NotifyUsers([]string{project.ManagerUserID}, content)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("项目 %d 子任务摘要: %v", projectID, err))
 			continue
 		}
 
-		recordSubtaskDigestSent(sqlDB, projectID, items, db.ReminderKindSubtaskStartDigestMgr, sentDate)
+		recordSubtaskStartDigestSent(sqlDB, projectID, items, sentDate)
 		result.SubtaskMgrDigestSent++
 		slog.Info("reminder · subtask digest mgr",
 			"project_id", projectID,
@@ -309,15 +314,15 @@ func runSubtaskDigests(
 			continue
 		}
 
-		lines, seen := uniqueSubtaskLines(items)
-		content := wecom.FormatMemberSubtaskDigest(lines)
+		lines, seen := uniqueSubtaskStartLines(items)
+		content := wecom.FormatMemberSubtaskStartDigest(lines)
 		msgID, err := wecom.NotifyUsers([]string{userID}, content)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("成员 %s 子任务摘要: %v", userID, err))
 			continue
 		}
 
-		recordMemberSubtaskDigestSent(sqlDB, userID, seen, sentDate)
+		recordMemberSubtaskStartDigestSent(sqlDB, userID, seen, sentDate)
 		result.SubtaskMemberDigest++
 		slog.Info("reminder · subtask digest member",
 			"userid", userID,
@@ -328,7 +333,7 @@ func runSubtaskDigests(
 	}
 }
 
-func subtaskDigestLines(items []subtaskDigestItem) []wecom.SubtaskDigestLine {
+func subtaskStartDigestLines(items []subtaskDigestItem) []wecom.SubtaskDigestLine {
 	lines := make([]wecom.SubtaskDigestLine, 0, len(items))
 	for _, it := range items {
 		mgr := it.Project.ManagerName
@@ -336,19 +341,20 @@ func subtaskDigestLines(items []subtaskDigestItem) []wecom.SubtaskDigestLine {
 			mgr = it.Project.ManagerUserID
 		}
 		lines = append(lines, wecom.SubtaskDigestLine{
-			ProjectName:    it.Project.Name,
-			WorkNo:         it.Project.WorkNo,
-			ManagerName:    mgr,
-			Content:        it.Subtask.Content,
-			EventDate:      it.EventDate,
-			PlannedEndDate: it.Subtask.PlannedEndDate,
-			DaysRemaining:  it.DaysRemaining,
+			ProjectName:     it.Project.Name,
+			WorkNo:          it.Project.WorkNo,
+			ManagerName:     mgr,
+			Content:         it.Subtask.Content,
+			PlannedStartDate: it.Subtask.PlannedStartDate,
+			EventDate:       it.EventDate,
+			PlannedEndDate:  it.Subtask.PlannedEndDate,
+			DaysRemaining:   it.DaysRemaining,
 		})
 	}
 	return lines
 }
 
-func uniqueSubtaskLines(items []subtaskDigestItem) ([]wecom.SubtaskDigestLine, map[int64]struct{}) {
+func uniqueSubtaskStartLines(items []subtaskDigestItem) ([]wecom.SubtaskDigestLine, map[int64]struct{}) {
 	seen := make(map[int64]struct{})
 	lines := make([]wecom.SubtaskDigestLine, 0, len(items))
 	for _, it := range items {
@@ -361,23 +367,185 @@ func uniqueSubtaskLines(items []subtaskDigestItem) ([]wecom.SubtaskDigestLine, m
 			mgr = it.Project.ManagerUserID
 		}
 		lines = append(lines, wecom.SubtaskDigestLine{
-			ProjectName:    it.Project.Name,
-			WorkNo:         it.Project.WorkNo,
-			ManagerName:    mgr,
-			Content:        it.Subtask.Content,
-			EventDate:      it.EventDate,
-			PlannedEndDate: it.Subtask.PlannedEndDate,
-			DaysRemaining:  it.DaysRemaining,
+			ProjectName:      it.Project.Name,
+			WorkNo:           it.Project.WorkNo,
+			ManagerName:      mgr,
+			Content:          it.Subtask.Content,
+			PlannedStartDate: it.Subtask.PlannedStartDate,
+			EventDate:        it.EventDate,
+			PlannedEndDate:   it.Subtask.PlannedEndDate,
+			DaysRemaining:    it.DaysRemaining,
 		})
 	}
 	return lines, seen
 }
 
-func subtaskReminderBlocked(sqlDB *sql.DB, subtaskID int64, sentDate string) bool {
+func runSubtaskEndDigests(
+	sqlDB *sql.DB,
+	subtasks []db.ProjectSubtask,
+	projectMap map[int64]db.Project,
+	endDays int,
+	today time.Time,
+	result *RunResult,
+) {
+	sentDate := today.Format("2006-01-02")
+
+	mgrBuckets := make(map[int64][]subtaskDigestItem)
+	memberBuckets := make(map[string][]subtaskDigestItem)
+	memberNames := make(map[string]string)
+
+	for _, st := range subtasks {
+		if !shouldSendSubtaskEnd(st, endDays, today) {
+			continue
+		}
+		if subtaskReminderBlocked(sqlDB, st.ID, db.ReminderKindSubtaskEnd, sentDate) {
+			result.Skipped++
+			continue
+		}
+
+		project, ok := projectMap[st.ProjectID]
+		if !ok {
+			continue
+		}
+		if db.EffectiveProjectStatus(project) == db.ProjectStatusCompleted {
+			continue
+		}
+
+		item := subtaskDigestItem{
+			Subtask:       st,
+			Project:       project,
+			DaysRemaining: daysRemaining(st.PlannedEndDate, today),
+			EventDate:     st.PlannedEndDate,
+		}
+		mgrBuckets[project.ID] = append(mgrBuckets[project.ID], item)
+
+		mgrID := project.ManagerUserID
+		for _, m := range st.Members {
+			if m.UserID == "" || m.UserID == mgrID {
+				continue
+			}
+			memberBuckets[m.UserID] = append(memberBuckets[m.UserID], item)
+			if m.Name != "" {
+				memberNames[m.UserID] = m.Name
+			}
+		}
+	}
+
+	for projectID, items := range mgrBuckets {
+		if len(items) == 0 {
+			continue
+		}
+		project := items[0].Project
+		if project.ManagerUserID == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("项目 %d 无负责人，跳过子任务完结摘要", projectID))
+			continue
+		}
+		if projectDigestBlocked(sqlDB, projectID, db.ReminderKindSubtaskEndDigestMgr, sentDate) {
+			result.Skipped++
+			continue
+		}
+
+		mgrName := project.ManagerName
+		if mgrName == "" {
+			mgrName = project.ManagerUserID
+		}
+		content := wecom.FormatManagerSubtaskEndDigest(
+			project.Name, project.WorkNo, mgrName, subtaskEndDigestLines(items))
+		msgID, err := wecom.NotifyUsers([]string{project.ManagerUserID}, content)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("项目 %d 子任务完结摘要: %v", projectID, err))
+			continue
+		}
+
+		recordSubtaskEndDigestSent(sqlDB, projectID, items, sentDate)
+		result.SubtaskEndMgrDigest++
+		slog.Info("reminder · subtask end digest mgr",
+			"project_id", projectID,
+			"items", len(items),
+			"msgid", msgID,
+		)
+	}
+
+	for userID, items := range memberBuckets {
+		if len(items) == 0 {
+			continue
+		}
+		if userDigestBlocked(sqlDB, userID, db.ReminderKindSubtaskEndDigestMember, sentDate) {
+			result.Skipped++
+			continue
+		}
+
+		lines, seen := uniqueSubtaskEndLines(items)
+		content := wecom.FormatMemberSubtaskEndDigest(lines)
+		msgID, err := wecom.NotifyUsers([]string{userID}, content)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("成员 %s 子任务完结摘要: %v", userID, err))
+			continue
+		}
+
+		recordMemberSubtaskEndDigestSent(sqlDB, userID, seen, sentDate)
+		result.SubtaskEndMemberDigest++
+		slog.Info("reminder · subtask end digest member",
+			"userid", userID,
+			"name", memberNames[userID],
+			"items", len(lines),
+			"msgid", msgID,
+		)
+	}
+}
+
+func subtaskEndDigestLines(items []subtaskDigestItem) []wecom.SubtaskDigestLine {
+	lines := make([]wecom.SubtaskDigestLine, 0, len(items))
+	for _, it := range items {
+		mgr := it.Project.ManagerName
+		if mgr == "" {
+			mgr = it.Project.ManagerUserID
+		}
+		lines = append(lines, wecom.SubtaskDigestLine{
+			ProjectName:      it.Project.Name,
+			WorkNo:           it.Project.WorkNo,
+			ManagerName:      mgr,
+			Content:          it.Subtask.Content,
+			PlannedStartDate: it.Subtask.PlannedStartDate,
+			EventDate:        it.EventDate,
+			PlannedEndDate:   it.Subtask.PlannedEndDate,
+			DaysRemaining:    it.DaysRemaining,
+		})
+	}
+	return lines
+}
+
+func uniqueSubtaskEndLines(items []subtaskDigestItem) ([]wecom.SubtaskDigestLine, map[int64]struct{}) {
+	seen := make(map[int64]struct{})
+	lines := make([]wecom.SubtaskDigestLine, 0, len(items))
+	for _, it := range items {
+		if _, ok := seen[it.Subtask.ID]; ok {
+			continue
+		}
+		seen[it.Subtask.ID] = struct{}{}
+		mgr := it.Project.ManagerName
+		if mgr == "" {
+			mgr = it.Project.ManagerUserID
+		}
+		lines = append(lines, wecom.SubtaskDigestLine{
+			ProjectName:      it.Project.Name,
+			WorkNo:           it.Project.WorkNo,
+			ManagerName:      mgr,
+			Content:          it.Subtask.Content,
+			PlannedStartDate: it.Subtask.PlannedStartDate,
+			EventDate:        it.EventDate,
+			PlannedEndDate:   it.Subtask.PlannedEndDate,
+			DaysRemaining:    it.DaysRemaining,
+		})
+	}
+	return lines, seen
+}
+
+func subtaskReminderBlocked(sqlDB *sql.DB, subtaskID int64, kind, sentDate string) bool {
 	if !oncePerDayReminderDedup {
 		return false
 	}
-	already, err := db.WasSubtaskReminderSent(sqlDB, subtaskID, db.ReminderKindSubtaskStart, sentDate)
+	already, err := db.WasSubtaskReminderSent(sqlDB, subtaskID, kind, sentDate)
 	return err == nil && already
 }
 
@@ -397,23 +565,43 @@ func userDigestBlocked(sqlDB *sql.DB, userID, kind, sentDate string) bool {
 	return err == nil && already
 }
 
-func recordSubtaskDigestSent(sqlDB *sql.DB, projectID int64, items []subtaskDigestItem, kind, sentDate string) {
+func recordSubtaskStartDigestSent(sqlDB *sql.DB, projectID int64, items []subtaskDigestItem, sentDate string) {
 	if !oncePerDayReminderDedup {
 		return
 	}
-	_ = db.RecordReminderSent(sqlDB, projectID, kind, sentDate)
+	_ = db.RecordReminderSent(sqlDB, projectID, db.ReminderKindSubtaskStartDigestMgr, sentDate)
 	for _, it := range items {
 		_ = db.RecordSubtaskReminderSent(sqlDB, it.Subtask.ID, db.ReminderKindSubtaskStart, sentDate)
 	}
 }
 
-func recordMemberSubtaskDigestSent(sqlDB *sql.DB, userID string, seen map[int64]struct{}, sentDate string) {
+func recordMemberSubtaskStartDigestSent(sqlDB *sql.DB, userID string, seen map[int64]struct{}, sentDate string) {
 	if !oncePerDayReminderDedup {
 		return
 	}
 	_ = db.RecordUserReminderSent(sqlDB, userID, db.ReminderKindSubtaskStartDigestMember, sentDate)
 	for id := range seen {
 		_ = db.RecordSubtaskReminderSent(sqlDB, id, db.ReminderKindSubtaskStart, sentDate)
+	}
+}
+
+func recordSubtaskEndDigestSent(sqlDB *sql.DB, projectID int64, items []subtaskDigestItem, sentDate string) {
+	if !oncePerDayReminderDedup {
+		return
+	}
+	_ = db.RecordReminderSent(sqlDB, projectID, db.ReminderKindSubtaskEndDigestMgr, sentDate)
+	for _, it := range items {
+		_ = db.RecordSubtaskReminderSent(sqlDB, it.Subtask.ID, db.ReminderKindSubtaskEnd, sentDate)
+	}
+}
+
+func recordMemberSubtaskEndDigestSent(sqlDB *sql.DB, userID string, seen map[int64]struct{}, sentDate string) {
+	if !oncePerDayReminderDedup {
+		return
+	}
+	_ = db.RecordUserReminderSent(sqlDB, userID, db.ReminderKindSubtaskEndDigestMember, sentDate)
+	for id := range seen {
+		_ = db.RecordSubtaskReminderSent(sqlDB, id, db.ReminderKindSubtaskEnd, sentDate)
 	}
 }
 
@@ -425,6 +613,17 @@ func shouldSendSubtaskStart(st db.ProjectSubtask, daysBefore int, today time.Tim
 		return false
 	}
 	return db.ShouldRemindInWindow(st.PlannedStartDate, daysBefore, today)
+}
+
+func shouldSendSubtaskEnd(st db.ProjectSubtask, daysBefore int, today time.Time) bool {
+	if st.PlannedEndDate == "" {
+		return false
+	}
+	status := db.EffectiveSubtaskStatus(st)
+	if status == db.SubtaskStatusNotStarted || status == db.SubtaskStatusCompleted {
+		return false
+	}
+	return db.ShouldRemindInWindow(st.PlannedEndDate, daysBefore, today)
 }
 
 func daysRemaining(eventDate string, today time.Time) int {
