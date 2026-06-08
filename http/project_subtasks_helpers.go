@@ -42,3 +42,29 @@ func loadSubtaskWithMembers(id int64) (db.ProjectSubtask, error) {
 func syncSubtaskMembersToProject(projectID int64) error {
 	return db.SyncProjectMembersFromSubtasks(sqlDB, projectID)
 }
+
+func syncSubtaskMembersToProjectAfterChange(projectID int64, removed []db.ProjectMember) error {
+	if err := db.SyncProjectMembersFromSubtasks(sqlDB, projectID); err != nil {
+		return err
+	}
+	return db.PruneProjectMembersAfterSubtaskRemoval(sqlDB, projectID, removed)
+}
+
+func removedSubtaskMembers(before, after []db.ProjectMember) []db.ProjectMember {
+	afterSet := make(map[string]struct{}, len(after))
+	for _, m := range after {
+		if m.UserID != "" {
+			afterSet[m.UserID] = struct{}{}
+		}
+	}
+	var removed []db.ProjectMember
+	for _, m := range before {
+		if m.UserID == "" {
+			continue
+		}
+		if _, ok := afterSet[m.UserID]; !ok {
+			removed = append(removed, m)
+		}
+	}
+	return removed
+}

@@ -148,6 +148,9 @@ func migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "app_users", "department_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := ensureColumn(db, "project_members", "source", "TEXT NOT NULL DEFAULT 'explicit'"); err != nil {
+		return err
+	}
 	return seedProjectsIfEmpty(db)
 }
 

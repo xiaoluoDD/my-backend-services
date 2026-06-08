@@ -121,13 +121,21 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	before, err := loadSubtaskWithMembers(s.ID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "子任务不存在",
+		})
+		return
+	}
 	if err := db.UpdateProjectSubtask(sqlDB, s); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": err.Error(),
 		})
 		return
 	}
-	if err := syncSubtaskMembersToProject(s.ProjectID); err != nil {
+	removed := removedSubtaskMembers(before.Members, s.Members)
+	if err := syncSubtaskMembersToProjectAfterChange(s.ProjectID, removed); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
 		})
@@ -153,8 +161,21 @@ func deleteProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	before, err := loadSubtaskWithMembers(id)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	if err := db.DeleteProjectSubtask(sqlDB, id); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+	if err := syncSubtaskMembersToProjectAfterChange(before.ProjectID, before.Members); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
 		})
 		return
