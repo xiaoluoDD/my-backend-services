@@ -118,6 +118,14 @@ func migrate(db *sql.DB) error {
 			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_project_subtasks_project ON project_subtasks(project_id)`,
+		`CREATE TABLE IF NOT EXISTS project_subtask_members (
+			subtask_id INTEGER NOT NULL,
+			userid TEXT NOT NULL,
+			name TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (subtask_id, userid),
+			FOREIGN KEY (subtask_id) REFERENCES project_subtasks(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_project_subtask_members_subtask ON project_subtask_members(subtask_id)`,
 		`CREATE TABLE IF NOT EXISTS app_settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL DEFAULT '',

@@ -58,6 +58,13 @@ func listProjectSubtasks(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []db.ProjectSubtask{}
 	}
+	list, err = attachSubtaskMembers(projectID, list)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	for i := range list {
 		list[i].Status = db.EffectiveSubtaskStatus(list[i])
 	}
@@ -88,8 +95,13 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	created, _ := db.GetProjectSubtask(sqlDB, id)
-	created.Status = db.EffectiveSubtaskStatus(created)
+	created, err := loadSubtaskWithMembers(id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "子任务已创建", "subtask": created,
 	})
@@ -109,8 +121,13 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	updated, _ := db.GetProjectSubtask(sqlDB, s.ID)
-	updated.Status = db.EffectiveSubtaskStatus(updated)
+	updated, err := loadSubtaskWithMembers(s.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "子任务已更新", "subtask": updated,
 	})

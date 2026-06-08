@@ -31,8 +31,9 @@ type ProjectSubtask struct {
 	ActualStartDate  string `json:"actual_start_date"`
 	PlannedEndDate   string `json:"planned_end_date"`
 	ActualEndDate    string `json:"actual_end_date"`
-	Remark           string `json:"remark"`
-	UpdatedAt        string `json:"updated_at"`
+	Remark           string          `json:"remark"`
+	UpdatedAt        string          `json:"updated_at"`
+	Members          []ProjectMember `json:"members"`
 }
 
 // ListProjectSubtasks 返回指定项目的子任务列表。
@@ -111,7 +112,14 @@ func CreateProjectSubtask(db *sql.DB, s ProjectSubtask) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err := ReplaceSubtaskMembers(db, id, s.Members); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // UpdateProjectSubtask 更新子任务。
@@ -144,7 +152,7 @@ func UpdateProjectSubtask(db *sql.DB, s ProjectSubtask) error {
 	if n == 0 {
 		return sql.ErrNoRows
 	}
-	return nil
+	return ReplaceSubtaskMembers(db, s.ID, s.Members)
 }
 
 // DeleteProjectSubtask 删除子任务。
