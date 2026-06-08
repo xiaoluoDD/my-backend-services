@@ -58,6 +58,57 @@ func ListSubtaskMembersMapByProject(db *sql.DB, projectID int64) (map[int64][]Pr
 	return out, rows.Err()
 }
 
+// ListSubtaskMembersUnionByProject 返回项目下所有子任务成员（去重）。
+func ListSubtaskMembersUnionByProject(db *sql.DB, projectID int64) ([]ProjectMember, error) {
+	if projectID <= 0 {
+		return nil, fmt.Errorf("无效的项目 ID")
+	}
+	rows, err := db.Query(
+		`SELECT sm.userid, MAX(sm.name), COALESCE(MAX(d.name), MAX(u.departments), '')
+		 FROM project_subtask_members sm
+		 INNER JOIN project_subtasks st ON st.id = sm.subtask_id
+		 LEFT JOIN app_users u ON sm.userid = u.userid
+		 LEFT JOIN departments d ON u.department_id = d.id
+		 WHERE st.project_id=?
+		 GROUP BY sm.userid
+		 ORDER BY MAX(sm.name), sm.userid`,
+		projectID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanProjectMembers(rows)
+}
+
+// ListSubtaskMembersUnionMapAllProjects 批量返回各项目的子任务成员（去重）。
+func ListSubtaskMembersUnionMapAllProjects(db *sql.DB) (map[int64][]ProjectMember, error) {
+	rows, err := db.Query(
+		`SELECT st.project_id, sm.userid, MAX(sm.name), COALESCE(MAX(d.name), MAX(u.departments), '')
+		 FROM project_subtask_members sm
+		 INNER JOIN project_subtasks st ON st.id = sm.subtask_id
+		 LEFT JOIN app_users u ON sm.userid = u.userid
+		 LEFT JOIN departments d ON u.department_id = d.id
+		 GROUP BY st.project_id, sm.userid
+		 ORDER BY st.project_id, MAX(sm.name), sm.userid`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[int64][]ProjectMember)
+	for rows.Next() {
+		var projectID int64
+		var m ProjectMember
+		if err := rows.Scan(&projectID, &m.UserID, &m.Name, &m.DepartmentName); err != nil {
+			return nil, err
+		}
+		out[projectID] = append(out[projectID], m)
+	}
+	return out, rows.Err()
+}
+
 func scanProjectMembers(rows *sql.Rows) ([]ProjectMember, error) {
 	var list []ProjectMember
 	for rows.Next() {

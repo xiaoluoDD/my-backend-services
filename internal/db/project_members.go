@@ -100,6 +100,45 @@ func AddProjectMembers(db *sql.DB, projectID int64, members []ProjectMember) err
 	return nil
 }
 
+// SyncProjectMembersFromSubtasks 将项目下全部子任务成员追加到 project_members（不重复）。
+func SyncProjectMembersFromSubtasks(db *sql.DB, projectID int64) error {
+	members, err := ListSubtaskMembersUnionByProject(db, projectID)
+	if err != nil {
+		return err
+	}
+	if len(members) == 0 {
+		return nil
+	}
+	return AddProjectMembers(db, projectID, members)
+}
+
+// MergeMemberLists 合并成员列表（按 userid 去重，base 优先保留部门等信息）。
+func MergeMemberLists(base, extra []ProjectMember) []ProjectMember {
+	seen := make(map[string]int, len(base))
+	out := make([]ProjectMember, 0, len(base)+len(extra))
+	for _, m := range base {
+		if m.UserID == "" {
+			continue
+		}
+		if _, ok := seen[m.UserID]; ok {
+			continue
+		}
+		seen[m.UserID] = len(out)
+		out = append(out, m)
+	}
+	for _, m := range extra {
+		if m.UserID == "" {
+			continue
+		}
+		if _, ok := seen[m.UserID]; ok {
+			continue
+		}
+		seen[m.UserID] = len(out)
+		out = append(out, m)
+	}
+	return out
+}
+
 // ProjectRecipients 项目提醒接收人（负责人 + 项目成员，去重）。
 func ProjectRecipients(p Project, members []ProjectMember) []ProjectMember {
 	seen := make(map[string]struct{})

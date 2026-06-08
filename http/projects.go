@@ -97,6 +97,13 @@ func loadProjectView(id int64) (projectView, error) {
 	if err != nil {
 		return projectView{}, err
 	}
+	if err := db.SyncProjectMembersFromSubtasks(sqlDB, id); err != nil {
+		return projectView{}, err
+	}
+	members, err = db.ListProjectMembers(sqlDB, id)
+	if err != nil {
+		return projectView{}, err
+	}
 	stats, err := db.SummarizeProjectSubtaskStats(sqlDB, id)
 	if err != nil {
 		return projectView{}, err
@@ -160,6 +167,13 @@ func listProjects(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	subtaskMembers, err := db.ListSubtaskMembersUnionMapAllProjects(sqlDB)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	for _, p := range projects {
 		members, err := db.ListProjectMembers(sqlDB, p.ID)
 		if err != nil {
@@ -167,6 +181,21 @@ func listProjects(w http.ResponseWriter, r *http.Request) {
 				"ok": false, "error": err.Error(),
 			})
 			return
+		}
+		if extra := subtaskMembers[p.ID]; len(extra) > 0 {
+			if err := db.AddProjectMembers(sqlDB, p.ID, extra); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+					"ok": false, "error": err.Error(),
+				})
+				return
+			}
+			members, err = db.ListProjectMembers(sqlDB, p.ID)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+					"ok": false, "error": err.Error(),
+				})
+				return
+			}
 		}
 		views = append(views, projectToView(p, members, subtaskStats[p.ID]))
 	}
