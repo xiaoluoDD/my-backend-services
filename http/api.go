@@ -180,7 +180,7 @@ func main() {
 	http.HandleFunc("/api/wecom/notify-project", handleWecomNotifyProject)
 	http.HandleFunc("/api/reminder/run", handleReminderRun)
 
-	http.HandleFunc("/api/logs", handleLogList)
+	http.HandleFunc("/api/logs", handleLogs)
 	http.HandleFunc("/api/logs/download", handleLogDownload)
 
 	addr := listenAddr()
@@ -199,7 +199,7 @@ func main() {
 		"wecom_send_group", "POST /api/wecom/send-group",
 		"wecom_notify_project", "POST /api/wecom/notify-project",
 		"reminder_run", "GET|POST /api/reminder/run",
-		"logs", "GET /api/logs",
+		"logs", "GET|DELETE /api/logs",
 		"logs_download", "GET /api/logs/download?name=",
 	)
 	log.Fatal(http.ListenAndServe(addr, logger.HTTPMiddleware(http.DefaultServeMux)))

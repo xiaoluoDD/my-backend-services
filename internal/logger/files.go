@@ -80,3 +80,15 @@ func ResolveLogFile(name string) (string, error) {
 	}
 	return abs, nil
 }
+
+// DeleteLogFile 删除指定日志文件（仅限 LOG_DIR 内 .log 文件）。
+func DeleteLogFile(name string) error {
+	path, err := ResolveLogFile(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	return nil
+}
