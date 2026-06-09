@@ -14,7 +14,7 @@ import (
 
 var logDateSuffix = regexp.MustCompile(`-(\d{4}-\d{2}-\d{2})\.log$`)
 
-// dailyFileWriter 按本地日历日写入 component-YYYY-MM-DD.log，跨天自动切换文件。
+// dailyFileWriter 按本地日历日写入 component-YYYY-MM-DD.log，跨天或文件被删后自动重建。
 type dailyFileWriter struct {
 	dir       string
 	component string
@@ -23,12 +23,19 @@ type dailyFileWriter struct {
 	file      *os.File
 }
 
+var activeDailyWriter *dailyFileWriter
+
 func newDailyFileWriter(dir, component string) (*dailyFileWriter, error) {
 	w := &dailyFileWriter{dir: dir, component: component}
 	if err := w.rotateIfNeeded(); err != nil {
 		return nil, err
 	}
+	activeDailyWriter = w
 	return w, nil
+}
+
+func (w *dailyFileWriter) currentPath(date string) string {
+	return filepath.Join(w.dir, fmt.Sprintf("%s-%s.log", w.component, date))
 }
 
 func (w *dailyFileWriter) Write(p []byte) (int, error) {
@@ -37,26 +44,68 @@ func (w *dailyFileWriter) Write(p []byte) (int, error) {
 	if err := w.rotateIfNeeded(); err != nil {
 		return 0, err
 	}
+	n, err := w.file.Write(p)
+	if err == nil {
+		return n, nil
+	}
+	_ = w.file.Close()
+	w.file = nil
+	w.curDate = ""
+	if err2 := w.rotateIfNeeded(); err2 != nil {
+		return n, err
+	}
 	return w.file.Write(p)
 }
 
 func (w *dailyFileWriter) rotateIfNeeded() error {
 	today := time.Now().Format("2006-01-02")
+	path := w.currentPath(today)
+
 	if w.file != nil && w.curDate == today {
-		return nil
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		} else if !os.IsNotExist(statErr) {
+			return statErr
+		}
+		_ = w.file.Close()
+		w.file = nil
 	}
+
 	if w.file != nil {
 		_ = w.file.Close()
 		w.file = nil
 	}
+
 	w.curDate = today
-	path := filepath.Join(w.dir, fmt.Sprintf("%s-%s.log", w.component, today))
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
 	w.file = f
 	return nil
+}
+
+// reopenDailyLogAfterDelete 当日志文件被外部删除（如管理界面）后，丢弃旧句柄以便下次写入重建。
+func reopenDailyLogAfterDelete(baseName string) {
+	if activeDailyWriter == nil {
+		return
+	}
+	activeDailyWriter.reopenAfterDelete(baseName)
+}
+
+func (w *dailyFileWriter) reopenAfterDelete(baseName string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	today := time.Now().Format("2006-01-02")
+	if baseName != fmt.Sprintf("%s-%s.log", w.component, today) {
+		return
+	}
+	if w.file != nil {
+		_ = w.file.Close()
+		w.file = nil
+	}
+	w.curDate = ""
 }
 
 func (w *dailyFileWriter) Close() error {

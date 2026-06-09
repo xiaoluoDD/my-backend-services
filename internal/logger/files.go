@@ -87,8 +87,10 @@ func DeleteLogFile(name string) error {
 	if err != nil {
 		return err
 	}
+	baseName := filepath.Base(path)
 	if err := os.Remove(path); err != nil {
 		return err
 	}
+	reopenDailyLogAfterDelete(baseName)
 	return nil
 }

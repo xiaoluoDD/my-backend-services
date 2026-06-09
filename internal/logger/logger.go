@@ -32,6 +32,7 @@ func Init(component string) *slog.Logger {
 		_ = logFileWriter.Close()
 		logFileWriter = nil
 	}
+	activeDailyWriter = nil
 
 	level := parseLevel(os.Getenv("LOG_LEVEL"))
 	writers := []io.Writer{os.Stdout}
