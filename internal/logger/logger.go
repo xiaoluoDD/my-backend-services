@@ -17,29 +17,46 @@ import (
 var (
 	mu            sync.Mutex
 	defaultLogger *slog.Logger = slog.Default()
+	logFileWriter io.WriteCloser
 )
 
 // Init 初始化日志。component 用于日志文件名，如 http、wecom、tcp。
+// 默认按日写入 logs/{component}-YYYY-MM-DD.log；LOG_DAILY=false 时写入单文件 {component}.log。
+// LOG_RETENTION_DAYS 默认 30，启动时删除更早的 .log 文件。
 // 环境变量 LOG_FORMAT：compact（默认，便于浏览）、text（slog 原始格式）、json。
 func Init(component string) *slog.Logger {
 	mu.Lock()
 	defer mu.Unlock()
+
+	if logFileWriter != nil {
+		_ = logFileWriter.Close()
+		logFileWriter = nil
+	}
 
 	level := parseLevel(os.Getenv("LOG_LEVEL"))
 	writers := []io.Writer{os.Stdout}
 
 	if dir := logDir(); dir != "" {
 		_ = os.MkdirAll(dir, 0o755)
-		name := component + ".log"
-		if strings.EqualFold(os.Getenv("LOG_DAILY"), "true") || os.Getenv("LOG_DAILY") == "1" {
-			name = component + "-" + time.Now().Format("2006-01-02") + ".log"
-		}
-		path := filepath.Join(dir, name)
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-		if err != nil {
-			slog.Default().Error("open log file failed", "path", path, "err", err)
+		cleanupOldLogFiles(dir, logRetentionDays())
+
+		if dailyLogEnabled() {
+			w, err := newDailyFileWriter(dir, component)
+			if err != nil {
+				slog.Default().Error("open daily log file failed", "dir", dir, "component", component, "err", err)
+			} else {
+				logFileWriter = w
+				writers = append(writers, w)
+			}
 		} else {
-			writers = append(writers, f)
+			path := filepath.Join(dir, component+".log")
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+			if err != nil {
+				slog.Default().Error("open log file failed", "path", path, "err", err)
+			} else {
+				logFileWriter = f
+				writers = append(writers, f)
+			}
 		}
 	}
 

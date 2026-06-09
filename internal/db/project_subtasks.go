@@ -256,7 +256,7 @@ func SummarizeAllProjectSubtaskStats(db *sql.DB) (map[int64]ProjectSubtaskStats,
 		hasActualStart := normalizeDateString(actualStart) != ""
 		if !hasActualEnd {
 			if !hasActualStart {
-				if t, ok := parseDateOnly(plannedStart); ok && todayDateOnly().After(t) {
+				if t, ok := parseDateOnly(plannedStart); ok && !todayDateOnly().Before(t) {
 					stats.SubtaskAnyOverdue = true
 				}
 			} else if t, ok := parseDateOnly(plannedEnd); ok && todayDateOnly().After(t) {
@@ -297,7 +297,7 @@ func EffectiveSubtaskStatus(s ProjectSubtask) string {
 		return SubtaskStatusCompleted
 	}
 	if normalizeDateString(s.ActualStartDate) == "" {
-		if t, ok := parseDateOnly(s.PlannedStartDate); ok && todayDateOnly().After(t) {
+		if t, ok := parseDateOnly(s.PlannedStartDate); ok && !todayDateOnly().Before(t) {
 			return SubtaskStatusOverdue
 		}
 		return SubtaskStatusNotStarted
