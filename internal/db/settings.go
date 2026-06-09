@@ -11,6 +11,8 @@ const SettingServerBaseURL = "server_base_url"
 const SettingReminderTime = "reminder_time"
 const SettingProjectStartReminderDays = "project_start_reminder_days"
 const SettingProjectEndReminderDays = "project_end_reminder_days"
+const SettingDebugPasswordEnabled = "debug_password_enabled"
+const SettingDebugPassword = "debug_password"
 
 const defaultProjectStartReminderDays = 1
 const defaultProjectEndReminderDays = 3
@@ -21,6 +23,8 @@ type AppSettings struct {
 	ReminderTime             string `json:"reminder_time"`
 	ProjectStartReminderDays int    `json:"project_start_reminder_days"`
 	ProjectEndReminderDays   int    `json:"project_end_reminder_days"`
+	DebugPasswordEnabled     bool   `json:"debug_password_enabled"`
+	DebugPassword            string `json:"debug_password,omitempty"`
 	UpdatedAt                string `json:"updated_at,omitempty"`
 }
 
@@ -45,6 +49,8 @@ func GetAppSettings(db *sql.DB) (AppSettings, error) {
 		ReminderTime:             m[SettingReminderTime],
 		ProjectStartReminderDays: parseReminderDays(m[SettingProjectStartReminderDays], defaultProjectStartReminderDays),
 		ProjectEndReminderDays:   parseReminderDays(m[SettingProjectEndReminderDays], defaultProjectEndReminderDays),
+		DebugPasswordEnabled:     parseBoolSetting(m[SettingDebugPasswordEnabled], false),
+		DebugPassword:            m[SettingDebugPassword],
 		UpdatedAt:                m["_updated_at"],
 	}, nil
 }
@@ -73,6 +79,44 @@ func SaveAppSettings(db *sql.DB, s AppSettings) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// SaveDebugAccessSettings 保存调试入口密码（password 非 nil 且非空时才更新密码）。
+func SaveDebugAccessSettings(db *sql.DB, enabled *bool, password *string) error {
+	if enabled == nil && password == nil {
+		return nil
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if enabled != nil {
+		val := "false"
+		if *enabled {
+			val = "true"
+		}
+		if err := upsertAppSetting(tx, SettingDebugPasswordEnabled, val, now); err != nil {
+			return err
+		}
+	}
+	if password != nil && strings.TrimSpace(*password) != "" {
+		if err := upsertAppSetting(tx, SettingDebugPassword, strings.TrimSpace(*password), now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func parseBoolSetting(raw string, defaultVal bool) bool {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return defaultVal
+	}
+	return raw == "1" || raw == "true" || raw == "yes"
 }
 
 func parseReminderDays(raw string, defaultVal int) int {
