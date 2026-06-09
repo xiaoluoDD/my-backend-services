@@ -254,8 +254,12 @@ func SummarizeAllProjectSubtaskStats(db *sql.DB) (map[int64]ProjectSubtaskStats,
 		}
 		hasActualEnd := normalizeDateString(actualEnd) != ""
 		hasActualStart := normalizeDateString(actualStart) != ""
-		if hasActualStart && !hasActualEnd {
-			if t, ok := parseDateOnly(plannedEnd); ok && todayDateOnly().After(t) {
+		if !hasActualEnd {
+			if !hasActualStart {
+				if t, ok := parseDateOnly(plannedStart); ok && todayDateOnly().After(t) {
+					stats.SubtaskAnyOverdue = true
+				}
+			} else if t, ok := parseDateOnly(plannedEnd); ok && todayDateOnly().After(t) {
 				stats.SubtaskAnyOverdue = true
 			}
 		}
@@ -287,12 +291,15 @@ func todayDateOnly() time.Time {
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 }
 
-// EffectiveSubtaskStatus 根据实际/计划完成日期计算子任务展示状态。
+// EffectiveSubtaskStatus 根据实际/计划日期计算子任务展示状态（按本地日历日，非定时任务写库）。
 func EffectiveSubtaskStatus(s ProjectSubtask) string {
 	if normalizeDateString(s.ActualEndDate) != "" {
 		return SubtaskStatusCompleted
 	}
 	if normalizeDateString(s.ActualStartDate) == "" {
+		if t, ok := parseDateOnly(s.PlannedStartDate); ok && todayDateOnly().After(t) {
+			return SubtaskStatusOverdue
+		}
 		return SubtaskStatusNotStarted
 	}
 	if t, ok := parseDateOnly(s.PlannedEndDate); ok && todayDateOnly().After(t) {
