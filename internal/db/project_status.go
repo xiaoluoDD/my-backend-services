@@ -20,7 +20,7 @@ func EffectiveProjectStatus(p Project) string {
 	return ProjectStatusInProgress
 }
 
-// DisplayProjectStatus 返回项目对外展示状态（含子任务逾期判定）。
+// DisplayProjectStatus 仅用于总览看板汇总（含子任务逾期）；项目列表仍用 EffectiveProjectStatus。
 func DisplayProjectStatus(p Project, subtasks []ProjectSubtask) string {
 	base := EffectiveProjectStatus(p)
 	if base == ProjectStatusCompleted || base == ProjectStatusNotStarted {

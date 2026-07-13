@@ -94,7 +94,7 @@ func projectToView(p db.Project, members []db.ProjectMember, stats db.ProjectSub
 	if members == nil {
 		members = []db.ProjectMember{}
 	}
-	p.Status = db.DisplayProjectStatusFromOverdueFlag(p, stats.SubtaskAnyOverdue)
+	p.Status = db.EffectiveProjectStatus(p)
 	return projectView{
 		Project:                p,
 		Members:                members,
