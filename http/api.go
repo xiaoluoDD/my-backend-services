@@ -174,6 +174,7 @@ func main() {
 	http.HandleFunc("/api/projects", handleProjects)
 	http.HandleFunc("/api/project-subtasks", handleProjectSubtasks)
 	http.HandleFunc("/api/dashboard/summary", handleDashboardSummary)
+	http.HandleFunc("/api/dashboard/person-tasks", handleDashboardPersonTasks)
 	http.HandleFunc("/api/changelog", handleChangelog)
 	http.HandleFunc("/api/departments", handleDepartments)
 	http.HandleFunc("/api/db/export", handleDBExport)
@@ -197,6 +198,7 @@ func main() {
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"project_subtasks", "GET|POST|PUT|DELETE /api/project-subtasks",
 		"dashboard_summary", "GET /api/dashboard/summary?year=",
+		"dashboard_person_tasks", "GET /api/dashboard/person-tasks?userid=&name=&status=&year=",
 		"changelog", "GET /api/changelog",
 		"db_export", "GET /api/db/export",
 		"db_download", "GET /api/db/download",
