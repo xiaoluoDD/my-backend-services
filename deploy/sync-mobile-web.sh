@@ -39,4 +39,4 @@ sudo chown -R www-data:www-data "$WEB_DEST"
 sudo chmod -R a+rX "$WEB_DEST"
 
 echo ""
-echo "完成。手机刷新: http://<服务器IP>/mobile/index.html"
+echo "完成。手机刷新: http://<服务器IP>:8080/mobile/index.html"

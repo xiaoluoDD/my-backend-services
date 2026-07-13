@@ -37,8 +37,11 @@ sed "s|@WEB_ROOT@|$WEB_ROOT|g" "$ROOT/deploy/nginx-mobile.conf" | sudo tee "$SIT
 
 sudo ln -sf "$SITE" /etc/nginx/sites-enabled/project-mobile
 
-# 避免与 default 站点冲突时可禁用 default（可选）
-# sudo rm -f /etc/nginx/sites-enabled/default
+# 禁用 default，避免 server_name "_" 冲突导致 /mobile/ 404
+if [[ -L /etc/nginx/sites-enabled/default ]] || [[ -f /etc/nginx/sites-enabled/default ]]; then
+  echo "==> 禁用 default 站点（避免 80 端口 server_name 冲突）"
+  sudo rm -f /etc/nginx/sites-enabled/default
+fi
 
 echo "==> 检查配置"
 sudo nginx -t
@@ -49,7 +52,9 @@ sudo systemctl reload nginx
 
 echo ""
 echo "完成。请在手机浏览器打开："
-echo "  http://<本机公网IP>/mobile/index.html"
+echo "  http://<本机公网IP>:8080/mobile/index.html"
 echo ""
 echo "确认 js/config.js 中 apiBase 为 ''（空字符串，同域反代）。"
-echo "若 8081 已对公网开放，建议云安全组限制 8081 仅内网/办公 IP，公网只开 80。"
+echo "若 80 由 Caddy 占用，请: sudo systemctl enable --now caddy"
+echo "并放行防火墙: sudo ufw allow 8080/tcp"
+echo "若 8081 已对公网开放，建议安全组限制 8081 仅办公 IP。"
