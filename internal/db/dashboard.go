@@ -54,7 +54,13 @@ type DashboardSummary struct {
 	ByPerson       []DashboardPersonGroup  `json:"by_person"`
 }
 
-var dashboardStatusOrder = []string{
+var dashboardProjectStatusOrder = []string{
+	ProjectStatusNotStarted,
+	ProjectStatusInProgress,
+	ProjectStatusCompleted,
+}
+
+var dashboardSubtaskStatusOrder = []string{
 	ProjectStatusNotStarted,
 	ProjectStatusInProgress,
 	ProjectStatusOverdue,
@@ -73,9 +79,9 @@ type personKey struct {
 	name   string
 }
 
-func orderedDashboardRows(bucket map[string]int) []DashboardStatusCount {
+func orderedProjectDashboardRows(bucket map[string]int) []DashboardStatusCount {
 	rows := make([]DashboardStatusCount, 0, len(bucket))
-	for _, status := range dashboardStatusOrder {
+	for _, status := range dashboardProjectStatusOrder {
 		count := bucket[status]
 		if count <= 0 {
 			continue
@@ -83,6 +89,22 @@ func orderedDashboardRows(bucket map[string]int) []DashboardStatusCount {
 		rows = append(rows, DashboardStatusCount{Status: status, Count: count})
 	}
 	return rows
+}
+
+func orderedSubtaskDashboardRows(bucket map[string]int) []DashboardStatusCount {
+	rows := make([]DashboardStatusCount, 0, len(bucket))
+	for _, status := range dashboardSubtaskStatusOrder {
+		count := bucket[status]
+		if count <= 0 {
+			continue
+		}
+		rows = append(rows, DashboardStatusCount{Status: status, Count: count})
+	}
+	return rows
+}
+
+func orderedDashboardRows(bucket map[string]int) []DashboardStatusCount {
+	return orderedSubtaskDashboardRows(bucket)
 }
 
 func incrementBucket(bucket map[string]int, status string) {
@@ -182,7 +204,7 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 
 	for _, project := range filtered {
 		projectSubtasks := subtasksByProject[project.ID]
-		projectStatus := DisplayProjectStatus(project, projectSubtasks)
+		projectStatus := EffectiveProjectStatus(project)
 		incrementBucket(projectBucket, projectStatus)
 
 		workNo := strings.TrimSpace(project.WorkNo)
@@ -230,10 +252,10 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 		Total:      len(filtered),
 		NotStarted: projectBucket[ProjectStatusNotStarted],
 		InProgress: projectBucket[ProjectStatusInProgress],
-		Overdue:    projectBucket[ProjectStatusOverdue],
+		Overdue:    0,
 		Completed:  projectBucket[ProjectStatusCompleted],
 	}
-	result.ProjectPie = orderedDashboardRows(projectBucket)
+	result.ProjectPie = orderedProjectDashboardRows(projectBucket)
 
 	workNos := make([]string, 0, len(workNoBuckets))
 	for workNo := range workNoBuckets {
@@ -266,7 +288,7 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 				}
 				merged[key] = group
 			}
-			for _, status := range dashboardStatusOrder {
+			for _, status := range dashboardSubtaskStatusOrder {
 				count := bucket[status]
 				if count <= 0 {
 					continue
