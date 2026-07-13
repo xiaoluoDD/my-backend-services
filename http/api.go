@@ -174,6 +174,7 @@ func main() {
 	http.HandleFunc("/api/projects", handleProjects)
 	http.HandleFunc("/api/project-subtasks", handleProjectSubtasks)
 	http.HandleFunc("/api/dashboard/summary", handleDashboardSummary)
+	http.HandleFunc("/api/changelog", handleChangelog)
 	http.HandleFunc("/api/departments", handleDepartments)
 	http.HandleFunc("/api/db/export", handleDBExport)
 	http.HandleFunc("/api/db/download", handleDBDownload)
@@ -196,6 +197,7 @@ func main() {
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"project_subtasks", "GET|POST|PUT|DELETE /api/project-subtasks",
 		"dashboard_summary", "GET /api/dashboard/summary?year=",
+		"changelog", "GET /api/changelog",
 		"db_export", "GET /api/db/export",
 		"db_download", "GET /api/db/download",
 		"wecom_send_group", "POST /api/wecom/send-group",
