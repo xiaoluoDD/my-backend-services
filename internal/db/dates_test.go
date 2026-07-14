@@ -27,3 +27,20 @@ func TestShouldRemindInWindow_OutsideWindow(t *testing.T) {
 		t.Fatal("expected 2026-06-07 to be outside 1-day window ending 2026-06-09")
 	}
 }
+
+func TestIsDatePast(t *testing.T) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Skip("Asia/Shanghai not available")
+	}
+	today := time.Date(2026, 6, 10, 9, 0, 0, 0, loc)
+	if !IsDatePast("2026-06-09", today) {
+		t.Fatal("expected 2026-06-10 to be past 2026-06-09")
+	}
+	if IsDatePast("2026-06-10", today) {
+		t.Fatal("same calendar day should not be past")
+	}
+	if IsDatePast("2026-06-11", today) {
+		t.Fatal("future date should not be past")
+	}
+}

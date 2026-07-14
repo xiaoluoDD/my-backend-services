@@ -232,7 +232,10 @@ func formatProjectTitle(name, workNo string) string {
 
 func formatCountdown(daysRemaining int, eventDate string) string {
 	dateText := emptyDash(eventDate)
-	if daysRemaining <= 0 {
+	if daysRemaining < 0 {
+		return fmt.Sprintf("已逾期 %d 天（%s）", -daysRemaining, dateText)
+	}
+	if daysRemaining == 0 {
 		return fmt.Sprintf("今日为计划日（%s）", dateText)
 	}
 	return fmt.Sprintf("距离计划日还有 %d 天（%s）", daysRemaining, dateText)

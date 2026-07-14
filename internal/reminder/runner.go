@@ -619,8 +619,16 @@ func shouldSendSubtaskEnd(st db.ProjectSubtask, daysBefore int, today time.Time)
 	if st.PlannedEndDate == "" {
 		return false
 	}
-	status := db.EffectiveSubtaskStatus(st)
-	if status == db.SubtaskStatusNotStarted || status == db.SubtaskStatusCompleted {
+	// 已写入实际完成时间：停止提醒。
+	if db.EffectiveSubtaskStatus(st) == db.SubtaskStatusCompleted {
+		return false
+	}
+	// 已超过计划完成日：每天提醒，直到写入实际完成。
+	if db.IsDatePast(st.PlannedEndDate, today) {
+		return true
+	}
+	// 计划完成日当天及之前：仅在提前窗口内、且已启动（非待启动）时提醒。
+	if db.EffectiveSubtaskStatus(st) == db.SubtaskStatusNotStarted {
 		return false
 	}
 	return db.ShouldRemindInWindow(st.PlannedEndDate, daysBefore, today)
@@ -628,7 +636,7 @@ func shouldSendSubtaskEnd(st db.ProjectSubtask, daysBefore int, today time.Time)
 
 func daysRemaining(eventDate string, today time.Time) int {
 	d, ok := db.DaysUntilEvent(eventDate, today)
-	if !ok || d < 0 {
+	if !ok {
 		return 0
 	}
 	return d

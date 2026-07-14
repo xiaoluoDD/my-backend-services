@@ -27,6 +27,15 @@ func ShouldRemindInWindow(eventDate string, daysBefore int, today time.Time) boo
 	return !todayDay.Before(windowStart) && !todayDay.After(eventDay)
 }
 
+// IsDatePast 判断 today 是否严格晚于 eventDate（按日历日）。
+func IsDatePast(eventDate string, today time.Time) bool {
+	event, ok := parseDateOnly(eventDate)
+	if !ok {
+		return false
+	}
+	return dateOnly(today).After(dateOnly(event))
+}
+
 // DaysUntilEvent 返回 today 到 eventDate 的天数（当天为 0，明天为 1）。
 func DaysUntilEvent(eventDate string, today time.Time) (int, bool) {
 	event, ok := parseDateOnly(eventDate)
