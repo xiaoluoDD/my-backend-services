@@ -228,6 +228,15 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 			}
 		}
 
+		if len(projectSubtasks) == 0 {
+			// 尚无子任务时，仍按项目状态计入进度/责任人表，避免新建项目在看板上“消失”
+			incrementBucket(workNoBuckets[workNo], projectStatus)
+			if !personKeyIsEmpty(managerKey) {
+				incrementBucket(managerBuckets[managerKey], projectStatus)
+			}
+			continue
+		}
+
 		for _, subtask := range projectSubtasks {
 			status := EffectiveSubtaskStatus(subtask)
 			incrementBucket(workNoBuckets[workNo], status)
