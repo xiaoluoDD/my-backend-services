@@ -14,7 +14,9 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# 通过软链接调用时，$0 可能是 ~/update-all.sh，需解析真实路径
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 PROJECT_SHOW="${PROJECT_SHOW:-$HOME/ProjectShow}"
 WEB_DEST="${WEB_DEST:-/var/www/project-show-web}"
 NGINX_SITE="${NGINX_SITE:-/etc/nginx/sites-available/project-mobile}"

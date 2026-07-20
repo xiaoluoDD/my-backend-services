@@ -5,7 +5,8 @@
 #   bash ~/my-backend-services/deploy/update-all.sh
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 UNIT="wecom-http"
 
 cd "$ROOT"
