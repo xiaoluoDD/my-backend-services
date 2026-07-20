@@ -155,6 +155,23 @@ func migrate(db *sql.DB) error {
 			PRIMARY KEY (userid, kind, sent_date)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_reminder_sent_date ON user_reminder_sent(sent_date)`,
+		`CREATE TABLE IF NOT EXISTS accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+			display_name TEXT NOT NULL DEFAULT '',
+			role TEXT NOT NULL DEFAULT 'user',
+			password_hash TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS auth_sessions (
+			token TEXT PRIMARY KEY,
+			username TEXT NOT NULL,
+			role TEXT NOT NULL,
+			expires_at TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_username ON auth_sessions(username)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {

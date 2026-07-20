@@ -171,6 +171,9 @@ func main() {
 	})
 
 	http.HandleFunc("/api/settings", handleSettings)
+	http.HandleFunc("/api/auth/", handleAuth)
+	http.HandleFunc("/api/auth", handleAuth)
+	http.HandleFunc("/api/accounts", handleAccounts)
 	http.HandleFunc("/api/projects", handleProjects)
 	http.HandleFunc("/api/project-subtasks", handleProjectSubtasks)
 	http.HandleFunc("/api/dashboard/summary", handleDashboardSummary)
@@ -195,6 +198,10 @@ func main() {
 		"departments", "GET|POST|PUT|DELETE /api/departments",
 		"wecom_stats", "GET /api/wecom/stats",
 		"settings", "GET|PUT /api/settings",
+		"auth_login", "POST /api/auth/login",
+		"auth_logout", "POST /api/auth/logout",
+		"auth_me", "GET /api/auth/me",
+		"accounts", "GET|POST|PUT|DELETE /api/accounts",
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"project_subtasks", "GET|POST|PUT|DELETE /api/project-subtasks",
 		"dashboard_summary", "GET /api/dashboard/summary?year=",

@@ -158,10 +158,19 @@ func handleProjects(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		listProjects(w, r)
 	case http.MethodPost:
+		if !requireEditProjects(w, r) {
+			return
+		}
 		createProject(w, r)
 	case http.MethodPut:
+		if !requireEditProjects(w, r) {
+			return
+		}
 		updateProject(w, r)
 	case http.MethodDelete:
+		if !requireEditProjects(w, r) {
+			return
+		}
 		deleteProject(w, r)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{

@@ -14,10 +14,19 @@ func handleProjectSubtasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		listProjectSubtasks(w, r)
 	case http.MethodPost:
+		if !requireEditProjects(w, r) {
+			return
+		}
 		createProjectSubtask(w, r)
 	case http.MethodPut:
+		if !requireEditProjects(w, r) {
+			return
+		}
 		updateProjectSubtask(w, r)
 	case http.MethodDelete:
+		if !requireEditProjects(w, r) {
+			return
+		}
 		deleteProjectSubtask(w, r)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
