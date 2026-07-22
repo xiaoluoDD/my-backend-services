@@ -82,9 +82,11 @@ func handleAuth(w http.ResponseWriter, r *http.Request) {
 		handleAuthLogout(w, r)
 	case path == "me" && r.Method == http.MethodGet:
 		handleAuthMe(w, r)
+	case path == "password" && r.Method == http.MethodPost:
+		handleAuthChangePassword(w, r)
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{
-			"ok": false, "error": "未知接口，请使用 /api/auth/login|logout|me",
+			"ok": false, "error": "未知接口，请使用 /api/auth/login|logout|me|password",
 		})
 	}
 }
@@ -148,6 +150,42 @@ func handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":   true,
 		"user": user,
+	})
+}
+
+func handleAuthChangePassword(w http.ResponseWriter, r *http.Request) {
+	user, err := currentAuthUser(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
+			"ok": false, "error": "请先登录",
+		})
+		return
+	}
+	body, _ := io.ReadAll(r.Body)
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "请求 JSON 无效",
+		})
+		return
+	}
+	if err := db.ChangeOwnPassword(sqlDB, user.Username, req.Password); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, db.ErrInvalidCredential) {
+			status = http.StatusUnauthorized
+		} else if errors.Is(err, db.ErrCannotModifyRoot) {
+			status = http.StatusForbidden
+		} else if errors.Is(err, db.ErrAccountNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":  true,
+		"msg": "密码已更新",
 	})
 }
 

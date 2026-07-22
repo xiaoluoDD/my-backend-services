@@ -379,6 +379,38 @@ func UpdateAccount(dbConn *sql.DB, id int64, displayName, role, newPassword stri
 	return acc, nil
 }
 
+// ChangeOwnPassword 当前登录用户修改自己的密码（无需原密码）。
+func ChangeOwnPassword(dbConn *sql.DB, username, newPassword string) error {
+	username = strings.TrimSpace(username)
+	newPassword = strings.TrimSpace(newPassword)
+	if username == "" {
+		return ErrInvalidCredential
+	}
+	if newPassword == "" {
+		return fmt.Errorf("新密码不能为空")
+	}
+	if len(newPassword) < 4 {
+		return fmt.Errorf("新密码至少 4 位")
+	}
+	if strings.EqualFold(username, HardcodedSuperUsername) {
+		return ErrCannotModifyRoot
+	}
+	acc, err := GetAccountByUsername(dbConn, username)
+	if err != nil {
+		return err
+	}
+	hash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	now := time.Now().Format(time.RFC3339)
+	_, err = dbConn.Exec(
+		`UPDATE accounts SET password_hash=?, updated_at=? WHERE id=?`,
+		hash, now, acc.ID,
+	)
+	return err
+}
+
 func DeleteAccount(dbConn *sql.DB, id int64) error {
 	acc, err := GetAccountByID(dbConn, id)
 	if err != nil {

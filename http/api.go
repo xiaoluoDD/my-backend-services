@@ -201,6 +201,7 @@ func main() {
 		"auth_login", "POST /api/auth/login",
 		"auth_logout", "POST /api/auth/logout",
 		"auth_me", "GET /api/auth/me",
+		"auth_password", "POST /api/auth/password",
 		"accounts", "GET|POST|PUT|DELETE /api/accounts",
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"project_subtasks", "GET|POST|PUT|DELETE /api/project-subtasks",
