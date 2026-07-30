@@ -40,6 +40,9 @@ func TestSummarizeDashboardIncludesProjectWithoutSubtasks(t *testing.T) {
 			continue
 		}
 		foundWork = true
+		if g.ProjectName != "网页新建无子任务" {
+			t.Fatalf("project_name=%q, want 网页新建无子任务", g.ProjectName)
+		}
 		if len(g.Rows) == 0 {
 			t.Fatal("by_work_no rows empty")
 		}

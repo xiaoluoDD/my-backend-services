@@ -23,9 +23,10 @@ type DashboardProjectSummary struct {
 
 // DashboardWorkNoGroup 按工番号分组。
 type DashboardWorkNoGroup struct {
-	WorkNo    string                 `json:"work_no"`
-	ProjectID int64                  `json:"project_id"`
-	Rows      []DashboardStatusCount `json:"rows"`
+	WorkNo      string                 `json:"work_no"`
+	ProjectName string                 `json:"project_name"`
+	ProjectID   int64                  `json:"project_id"`
+	Rows        []DashboardStatusCount `json:"rows"`
 }
 
 // DashboardPersonRow 责任人统计行。
@@ -198,6 +199,7 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 	projectBucket := make(map[string]int)
 	workNoBuckets := make(map[string]map[string]int)
 	workNoProjectID := make(map[string]int64)
+	workNoProjectName := make(map[string]string)
 	managerBuckets := make(map[personKey]map[string]int)
 	subtaskOwnerBuckets := make(map[personKey]map[string]int)
 	personProjectID := make(map[personKey]int64)
@@ -216,6 +218,7 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 		}
 		if _, ok := workNoProjectID[workNo]; !ok {
 			workNoProjectID[workNo] = project.ID
+			workNoProjectName[workNo] = strings.TrimSpace(project.Name)
 		}
 
 		managerKey := makePersonKey(project.ManagerUserID, project.ManagerName)
@@ -279,9 +282,10 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 			continue
 		}
 		result.ByWorkNo = append(result.ByWorkNo, DashboardWorkNoGroup{
-			WorkNo:    workNo,
-			ProjectID: workNoProjectID[workNo],
-			Rows:      rows,
+			WorkNo:      workNo,
+			ProjectName: workNoProjectName[workNo],
+			ProjectID:   workNoProjectID[workNo],
+			Rows:        rows,
 		})
 	}
 
