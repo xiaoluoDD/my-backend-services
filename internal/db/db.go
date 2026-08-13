@@ -172,6 +172,13 @@ func migrate(db *sql.DB) error {
 			created_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_username ON auth_sessions(username)`,
+		`CREATE TABLE IF NOT EXISTS account_login_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL COLLATE NOCASE,
+			logged_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_account_login_logs_user_time
+			ON account_login_logs(username, logged_at DESC)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {

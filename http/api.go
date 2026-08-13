@@ -174,6 +174,7 @@ func main() {
 	http.HandleFunc("/api/auth/", handleAuth)
 	http.HandleFunc("/api/auth", handleAuth)
 	http.HandleFunc("/api/accounts", handleAccounts)
+	http.HandleFunc("/api/accounts/login-history", handleAccountLoginHistory)
 	http.HandleFunc("/api/projects", handleProjects)
 	http.HandleFunc("/api/project-subtasks", handleProjectSubtasks)
 	http.HandleFunc("/api/dashboard/summary", handleDashboardSummary)
@@ -203,6 +204,7 @@ func main() {
 		"auth_me", "GET /api/auth/me",
 		"auth_password", "POST /api/auth/password",
 		"accounts", "GET|POST|PUT|DELETE /api/accounts",
+		"accounts_login_history", "GET /api/accounts/login-history?username=",
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"project_subtasks", "GET|POST|PUT|DELETE /api/project-subtasks",
 		"dashboard_summary", "GET /api/dashboard/summary?year=",

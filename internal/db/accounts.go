@@ -424,5 +424,6 @@ func DeleteAccount(dbConn *sql.DB, id int64) error {
 		return err
 	}
 	_, _ = dbConn.Exec(`DELETE FROM auth_sessions WHERE username=?`, acc.Username)
+	_ = DeleteAccountLoginLogs(dbConn, acc.Username)
 	return nil
 }

@@ -126,6 +126,9 @@ func handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 记录登录时间（失败不影响登录成功）
+	_ = db.RecordAccountLogin(sqlDB, user.Username)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":      true,
 		"token":   session.Token,
@@ -331,4 +334,42 @@ func deleteAccountAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
+}
+
+func handleAccountLoginHistory(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireManageAccounts(w, r); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+			"ok": false, "error": "请使用 GET",
+		})
+		return
+	}
+	username := strings.TrimSpace(r.URL.Query().Get("username"))
+	if username == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "请提供 username",
+		})
+		return
+	}
+	limit := 10
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	list, err := db.ListRecentAccountLogins(sqlDB, username, limit)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":       true,
+		"username": username,
+		"count":    len(list),
+		"logs":     list,
+	})
 }
