@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/db"
 )
@@ -295,6 +297,24 @@ func updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model.ID = p.ID
+
+	// 填写实际完结日期前：若存在未完结子任务则拒绝
+	if strings.TrimSpace(model.EndDate) != "" {
+		allDone, incomplete, total, err := db.AllProjectSubtasksCompleted(sqlDB, model.ID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"ok": false, "error": err.Error(),
+			})
+			return
+		}
+		if total > 0 && !allDone {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"ok": false,
+				"error": fmt.Sprintf("还有 %d 个子任务未完成，不能填写实际完结日期", incomplete),
+			})
+			return
+		}
+	}
 
 	if err := db.UpdateProject(sqlDB, model); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{

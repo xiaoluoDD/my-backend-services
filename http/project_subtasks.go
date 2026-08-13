@@ -106,6 +106,14 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// 已完结项目再新增子任务：清空实际完结日期并重算项目状态
+	cleared, err := db.ClearProjectEndDate(sqlDB, s.ProjectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	if err := syncSubtaskMembersToProject(s.ProjectID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
@@ -121,8 +129,15 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 	}
 	notifyNewSubtaskMembers(s.ProjectID, created, created.Members, wasOnProject)
 
+	msg := "子任务已创建"
+	if cleared {
+		msg = "子任务已创建；项目原已完结，已清空实际完结日期并更新项目状态"
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok": true, "msg": "子任务已创建", "subtask": created,
+		"ok":                         true,
+		"msg":                        msg,
+		"subtask":                    created,
+		"project_completion_cleared": cleared,
 	})
 }
 

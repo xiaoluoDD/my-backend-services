@@ -98,6 +98,39 @@ func UpdateProject(db *sql.DB, p Project) error {
 	return err
 }
 
+// AllProjectSubtasksCompleted 判断项目子任务是否均可视为已完结。
+// 无子任务时返回 allDone=true；有子任务则须全部填写实际完成日期。
+func AllProjectSubtasksCompleted(dbConn *sql.DB, projectID int64) (allDone bool, incomplete int, total int, err error) {
+	list, err := ListProjectSubtasks(dbConn, projectID)
+	if err != nil {
+		return false, 0, 0, err
+	}
+	total = len(list)
+	for _, s := range list {
+		if normalizeDateString(s.ActualEndDate) == "" {
+			incomplete++
+		}
+	}
+	return incomplete == 0, incomplete, total, nil
+}
+
+// ClearProjectEndDate 若项目已填写实际完结日期则清空，并按日期规则重算状态。
+func ClearProjectEndDate(dbConn *sql.DB, projectID int64) (cleared bool, err error) {
+	p, err := GetProject(dbConn, projectID)
+	if err != nil {
+		return false, err
+	}
+	if normalizeDateString(p.EndDate) == "" {
+		return false, nil
+	}
+	p.EndDate = ""
+	SyncProjectStatus(&p)
+	if err := UpdateProject(dbConn, p); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // DeleteProject 删除项目。
 func DeleteProject(db *sql.DB, id int64) error {
 	if id <= 0 {
