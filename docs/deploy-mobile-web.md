@@ -100,7 +100,7 @@ sudo nano /etc/nginx/sites-available/project-mobile
 
 ```nginx
 server {
-    listen 80;
+    listen 8080;
     server_name _;
 
     location /mobile/ {
@@ -108,18 +108,14 @@ server {
         index index.html;
     }
 
-    location /api/projects {
+    # 全部 API（含设置/提醒/日志/DB 导出）反代到 Go
+    location /api/ {
         proxy_pass http://127.0.0.1:8081;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    location /api/project-subtasks {
-        proxy_pass http://127.0.0.1:8081;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 300s;
+        client_max_body_size 50m;
     }
 }
 ```

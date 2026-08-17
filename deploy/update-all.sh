@@ -104,6 +104,8 @@ curl -s -o /dev/null -w "dashboard/summary   %{http_code}\n" http://127.0.0.1:80
 curl -s -o /dev/null -w "auth/login(OPTIONS略) — 用 POST 测登录\n" http://127.0.0.1:8081/api/auth/me || true
 curl -s -o /dev/null -w "nginx mobile index  %{http_code}\n" http://127.0.0.1:8080/mobile/index.html || true
 curl -s -o /dev/null -w "nginx dashboard api %{http_code}\n" http://127.0.0.1:8080/api/dashboard/summary || true
+curl -s -o /dev/null -w "nginx settings api %{http_code}\n" http://127.0.0.1:8080/api/settings || true
+curl -s -o /dev/null -w "nginx logs api     %{http_code}\n" http://127.0.0.1:8080/api/logs || true
 
 echo ""
 echo "=========================================="
