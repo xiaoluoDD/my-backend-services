@@ -6,7 +6,7 @@
 #
 # 可选环境变量：
 #   PROJECT_SHOW=~/ProjectShow
-#   WEB_DEST=/var/www/project-show-web
+#   WEB_BASE=/var/www/projectshow-web
 #   NGINX_SITE=/etc/nginx/sites-available/project-mobile
 #   SKIP_NGINX=1          跳过 Nginx 配置同步
 #   SKIP_WEB=1            跳过网页同步
@@ -18,7 +18,11 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 PROJECT_SHOW="${PROJECT_SHOW:-$HOME/ProjectShow}"
-WEB_DEST="${WEB_DEST:-/var/www/project-show-web}"
+WEB_BASE="${WEB_BASE:-/var/www/projectshow-web}"
+WEB_RELEASES="${WEB_RELEASES:-$WEB_BASE/releases}"
+WEB_PREVIEW="${WEB_PREVIEW:-$WEB_BASE/preview}"
+WEB_CURRENT="${WEB_CURRENT:-$WEB_BASE/current}"
+WEB_LEGACY="${WEB_LEGACY:-/var/www/project-show-web}"
 NGINX_SITE="${NGINX_SITE:-/etc/nginx/sites-available/project-mobile}"
 UNIT="wecom-http"
 
@@ -27,7 +31,7 @@ echo " 一键更新 ProjectShow 云端服务"
 echo "=========================================="
 echo "后端仓库: $ROOT"
 echo "网页仓库: $PROJECT_SHOW"
-echo "静态目录: $WEB_DEST"
+echo "网页基目录: $WEB_BASE"
 echo ""
 
 # ---------- 1. 后端 ----------
@@ -61,11 +65,20 @@ if [[ "${SKIP_WEB:-0}" != "1" ]]; then
     exit 1
   fi
   git -C "$PROJECT_SHOW" pull --ff-only
-  sudo mkdir -p "$WEB_DEST"
-  sudo rsync -a --delete "$PROJECT_SHOW/web/" "$WEB_DEST/"
-  sudo chown -R www-data:www-data "$WEB_DEST"
-  sudo chmod -R a+rX "$WEB_DEST"
-  echo "网页已同步到 $WEB_DEST"
+  sudo mkdir -p "$WEB_BASE" "$WEB_RELEASES"
+  if [[ ! -e "$WEB_CURRENT" && -d "$WEB_LEGACY" ]]; then
+    echo "==> 检测到旧正式目录，先让 current 指向旧站点"
+    sudo ln -sfn "$WEB_LEGACY" "$WEB_CURRENT"
+  fi
+  RELEASE_NAME="$(date +%Y%m%d_%H%M%S)"
+  RELEASE_DIR="$WEB_RELEASES/$RELEASE_NAME"
+  sudo mkdir -p "$RELEASE_DIR"
+  sudo rsync -a --delete "$PROJECT_SHOW/web/" "$RELEASE_DIR/"
+  sudo chown -R www-data:www-data "$RELEASE_DIR"
+  sudo chmod -R a+rX "$RELEASE_DIR"
+  sudo ln -sfn "$RELEASE_DIR" "$WEB_PREVIEW"
+  echo "预览版已同步到 $RELEASE_DIR"
+  echo "预览地址: http://<服务器IP>:8080/mobile-preview/index.html"
   echo ""
 else
   echo "==> [2/3] 跳过网页（SKIP_WEB=1）"
@@ -80,7 +93,10 @@ if [[ "${SKIP_NGINX:-0}" != "1" ]]; then
     echo "警告: 未找到 $CONF_SRC，跳过 Nginx"
   else
     TMP="$(mktemp)"
-    sed "s|@WEB_ROOT@|$WEB_DEST|g" "$CONF_SRC" > "$TMP"
+    sed \
+      -e "s|@WEB_CURRENT@|$WEB_CURRENT|g" \
+      -e "s|@WEB_PREVIEW@|$WEB_PREVIEW|g" \
+      "$CONF_SRC" > "$TMP"
     sudo cp "$TMP" "$NGINX_SITE"
     rm -f "$TMP"
     # 确保启用站点
@@ -102,6 +118,7 @@ echo "==> 自检"
 curl -s -o /dev/null -w "ping                %{http_code}\n" http://127.0.0.1:8081/ping || true
 curl -s -o /dev/null -w "dashboard/summary   %{http_code}\n" http://127.0.0.1:8081/api/dashboard/summary || true
 curl -s -o /dev/null -w "auth/login(OPTIONS略) — 用 POST 测登录\n" http://127.0.0.1:8081/api/auth/me || true
+curl -s -o /dev/null -w "nginx mobile preview %{http_code}\n" http://127.0.0.1:8080/mobile-preview/index.html || true
 curl -s -o /dev/null -w "nginx mobile index  %{http_code}\n" http://127.0.0.1:8080/mobile/index.html || true
 curl -s -o /dev/null -w "nginx dashboard api %{http_code}\n" http://127.0.0.1:8080/api/dashboard/summary || true
 curl -s -o /dev/null -w "nginx settings api %{http_code}\n" http://127.0.0.1:8080/api/settings || true
@@ -109,7 +126,10 @@ curl -s -o /dev/null -w "nginx logs api     %{http_code}\n" http://127.0.0.1:808
 
 echo ""
 echo "=========================================="
-echo " 全部完成。手机强制刷新："
+echo " 全部完成。预览地址："
+echo " http://<服务器IP>:8080/mobile-preview/index.html"
+echo "切正式版请执行 deploy/promote-mobile-web.sh"
+echo "手机正式地址："
 echo " http://<服务器IP>:8080/mobile/index.html"
 echo "=========================================="
 echo ""
