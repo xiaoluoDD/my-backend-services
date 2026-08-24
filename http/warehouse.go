@@ -97,6 +97,7 @@ func handleWarehousePurchaseOrders(w http.ResponseWriter, r *http.Request, rest 
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "没有解析到有效数据：请确认采购单是 OTAE 模板，数据从第 3 行开始"})
 			return
 		}
+		items = ensureUniqueWarehouseBarcodes(items)
 		count, err := db.ReplaceWarehousePurchaseOrders(sqlDB, items)
 		if err != nil {
 			slog.Error("warehouse import save failed", "items", len(items), "err", err)
@@ -387,6 +388,31 @@ func isMeaningfulWarehouseItem(it db.WarehousePurchaseOrder) bool {
 
 func generateWarehouseBarcode(counter int) string {
 	return fmt.Sprintf("ORT%s%04d", time.Now().Format("20060102"), counter)
+}
+
+func ensureUniqueWarehouseBarcodes(items []db.WarehousePurchaseOrder) []db.WarehousePurchaseOrder {
+	used := make(map[string]struct{}, len(items))
+	for i := range items {
+		bc := strings.TrimSpace(items[i].Barcode)
+		if bc == "" || hasBarcode(used, bc) {
+			bc = generateWarehouseBarcode(i + 1)
+			for hasBarcode(used, bc) {
+				bc = generateWarehouseBarcode(i + 1 + len(used))
+			}
+			items[i].Barcode = bc
+		}
+		used[items[i].Barcode] = struct{}{}
+		if items[i].DailyNumber <= 0 {
+			items[i].DailyNumber = i + 1
+		}
+	}
+	slog.Info("warehouse barcodes normalized", "items", len(items))
+	return items
+}
+
+func hasBarcode(used map[string]struct{}, barcode string) bool {
+	_, ok := used[barcode]
+	return ok
 }
 
 func bytesNewReader(b []byte) io.ReaderAt { return bytes.NewReader(b) }
