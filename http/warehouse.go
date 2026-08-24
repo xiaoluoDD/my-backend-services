@@ -504,32 +504,35 @@ func parseWarehouseInt(s string) int {
 }
 
 func normalizeWarehouseHeader(h string) string {
+	h = strings.TrimSpace(h)
+	h = strings.ReplaceAll(h, "（", "(")
+	h = strings.ReplaceAll(h, "）", ")")
 	switch strings.TrimSpace(h) {
-	case "订单号":
+	case "订单号", "订单号(下单时间)", "订单号(下单日期)", "订单号(订单时间)", "订单编号":
 		return "order_number"
-	case "部门":
+	case "部门", "所属部门", "使用部门":
 		return "department"
-	case "申请人":
+	case "申请人", "领料人", "填写人":
 		return "applicant"
-	case "项目管理号":
+	case "项目管理号", "项目号", "项目编号", "管理号":
 		return "project_number"
-	case "品番":
+	case "品番", "订番", "料号", "物料编号", "物料编码", "产品编码":
 		return "product_code"
-	case "名称":
+	case "名称", "产品名称", "物料名称", "品名":
 		return "product_name"
-	case "规格型号":
+	case "规格型号", "规格", "型号", "规格/型号":
 		return "specification"
-	case "厂家品牌":
+	case "厂家品牌", "厂家", "品牌", "供应商", "厂商":
 		return "manufacturer"
-	case "数量":
+	case "数量", "采购数量", "需求数量":
 		return "quantity"
 	case "入库数量":
 		return "stocked_quantity"
-	case "单位":
+	case "单位", "计量单位":
 		return "unit"
 	case "入库日期":
 		return "stock_in_date"
-	case "放置位置":
+	case "放置位置", "库位", "位置":
 		return "location"
 	case "条形码":
 		return "barcode"
