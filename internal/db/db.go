@@ -191,6 +191,9 @@ func migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "project_members", "source", "TEXT NOT NULL DEFAULT 'explicit'"); err != nil {
 		return err
 	}
+	if err := createWarehouseTables(db); err != nil {
+		return err
+	}
 	return seedProjectsIfEmpty(db)
 }
 
@@ -218,3 +221,4 @@ func ensureColumn(db *sql.DB, table, column, def string) error {
 	}
 	return nil
 }
+
