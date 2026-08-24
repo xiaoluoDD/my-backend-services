@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -22,7 +23,7 @@ type warehouseImportRequest struct {
 }
 
 type warehouseStockInItem struct {
-	Barcode string `json:"barcode"`
+	Barcode  string `json:"barcode"`
 	Quantity int    `json:"quantity"`
 	Location string `json:"location"`
 }
@@ -87,14 +88,22 @@ func handleWarehousePurchaseOrders(w http.ResponseWriter, r *http.Request, rest 
 	if len(rest) == 1 && rest[0] == "import-file" && r.Method == http.MethodPost {
 		items, err := parseWarehouseUpload(r)
 		if err != nil {
+			slog.Error("warehouse import failed", "err", err)
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		if len(items) == 0 {
+			slog.Warn("warehouse import parsed zero rows")
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "没有解析到有效数据：请确认采购单是 OTAE 模板，数据从第 3 行开始"})
 			return
 		}
 		count, err := db.ReplaceWarehousePurchaseOrders(sqlDB, items)
 		if err != nil {
+			slog.Error("warehouse import save failed", "items", len(items), "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
+		slog.Info("warehouse import saved", "items", len(items), "count", count)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": count})
 		return
 	}
@@ -143,6 +152,7 @@ func parseWarehouseUpload(r *http.Request) ([]db.WarehousePurchaseOrder, error) 
 	defer file.Close()
 
 	name := strings.ToLower(header.Filename)
+	slog.Info("warehouse import upload", "filename", header.Filename, "size", header.Size, "ext", filepath.Ext(name))
 	switch filepath.Ext(name) {
 	case ".xlsx":
 		return parseWarehouseXLSX(file)
@@ -212,9 +222,9 @@ type xlsxRow struct {
 }
 
 type xlsxCell struct {
-	R string `xml:"r,attr"`
-	T string `xml:"t,attr"`
-	V string `xml:"v"`
+	R  string `xml:"r,attr"`
+	T  string `xml:"t,attr"`
+	V  string `xml:"v"`
 	Is struct {
 		T string `xml:"t"`
 	} `xml:"is"`
@@ -289,14 +299,41 @@ func parseWarehouseXLSX(r io.Reader) ([]db.WarehousePurchaseOrder, error) {
 		return nil, nil
 	}
 
-	headerRow := rows[0]
-	keyByCol := map[string]string{}
-	for col, val := range headerRow {
-		keyByCol[col] = normalizeWarehouseHeader(val)
+	headerIndex, keyByCol := findWarehouseHeaderRow(rows)
+	if headerIndex >= 0 {
+		slog.Info("warehouse xlsx header detected", "header_row", headerIndex+1, "columns", len(keyByCol), "rows", len(rows))
+		return parseWarehouseRowsByHeader(rows, headerIndex, keyByCol), nil
 	}
 
+	slog.Info("warehouse xlsx using OTAE fixed-column parser", "rows", len(rows), "data_start_row", 3)
+	return parseWarehouseRowsByOTAE(rows), nil
+}
+
+func findWarehouseHeaderRow(rows []map[string]string) (int, map[string]string) {
+	limit := len(rows)
+	if limit > 20 {
+		limit = 20
+	}
+	for i := 0; i < limit; i++ {
+		keyByCol := map[string]string{}
+		score := 0
+		for col, val := range rows[i] {
+			key := normalizeWarehouseHeader(val)
+			if key != "" && key != strings.TrimSpace(val) {
+				keyByCol[col] = key
+				score++
+			}
+		}
+		if score >= 3 {
+			return i, keyByCol
+		}
+	}
+	return -1, nil
+}
+
+func parseWarehouseRowsByHeader(rows []map[string]string, headerIndex int, keyByCol map[string]string) []db.WarehousePurchaseOrder {
 	var items []db.WarehousePurchaseOrder
-	for _, row := range rows[1:] {
+	for _, row := range rows[headerIndex+1:] {
 		m := map[string]string{}
 		for col, val := range row {
 			key := keyByCol[col]
@@ -304,9 +341,52 @@ func parseWarehouseXLSX(r io.Reader) ([]db.WarehousePurchaseOrder, error) {
 				m[key] = val
 			}
 		}
-		items = append(items, normalizeWarehouseRow(m))
+		item := normalizeWarehouseRow(m)
+		if isMeaningfulWarehouseItem(item) {
+			items = append(items, item)
+		}
 	}
-	return normalizeWarehouseItems(items), nil
+	return normalizeWarehouseItems(items)
+}
+
+func parseWarehouseRowsByOTAE(rows []map[string]string) []db.WarehousePurchaseOrder {
+	var items []db.WarehousePurchaseOrder
+	for idx, row := range rows {
+		if idx < 2 {
+			continue
+		}
+		m := map[string]string{
+			"order_number":     row["Q"],
+			"department":       row["U"],
+			"applicant":        row["V"],
+			"project_number":   row["C"],
+			"product_code":     row["D"],
+			"product_name":     row["E"],
+			"specification":    row["F"],
+			"manufacturer":     row["G"],
+			"quantity":         row["H"],
+			"stocked_quantity": "0",
+			"unit":             row["I"],
+			"stock_in_date":    warehouseNow(),
+			"location":         "",
+			"barcode":          generateWarehouseBarcode(idx - 1),
+			"daily_number":     strconv.Itoa(idx - 1),
+		}
+		item := normalizeWarehouseRow(m)
+		if isMeaningfulWarehouseItem(item) {
+			items = append(items, item)
+		}
+	}
+	slog.Info("warehouse OTAE parser result", "items", len(items))
+	return items
+}
+
+func isMeaningfulWarehouseItem(it db.WarehousePurchaseOrder) bool {
+	return it.OrderNumber != "" || it.ProjectNumber != "" || it.ProductCode != "" || it.ProductName != "" || it.Specification != ""
+}
+
+func generateWarehouseBarcode(counter int) string {
+	return fmt.Sprintf("ORT%s%04d", time.Now().Format("20060102"), counter)
 }
 
 func bytesNewReader(b []byte) io.ReaderAt { return bytes.NewReader(b) }
@@ -334,7 +414,7 @@ func normalizeWarehouseItems(items []db.WarehousePurchaseOrder) []db.WarehousePu
 			"specification":    it.Specification,
 			"manufacturer":     it.Manufacturer,
 			"quantity":         strconv.Itoa(it.Quantity),
-			"stocked_quantity":  strconv.Itoa(it.StockedQuantity),
+			"stocked_quantity": strconv.Itoa(it.StockedQuantity),
 			"unit":             it.Unit,
 			"stock_in_date":    it.StockInDate,
 			"location":         it.Location,
@@ -347,9 +427,9 @@ func normalizeWarehouseItems(items []db.WarehousePurchaseOrder) []db.WarehousePu
 }
 
 func normalizeWarehouseRow(row map[string]string) db.WarehousePurchaseOrder {
-	qty, _ := strconv.Atoi(strings.TrimSpace(row["quantity"]))
-	stocked, _ := strconv.Atoi(strings.TrimSpace(row["stocked_quantity"]))
-	daily, _ := strconv.Atoi(strings.TrimSpace(row["daily_number"]))
+	qty := parseWarehouseInt(row["quantity"])
+	stocked := parseWarehouseInt(row["stocked_quantity"])
+	daily := parseWarehouseInt(row["daily_number"])
 	barcode := strings.TrimSpace(row["barcode"])
 	if barcode == "" {
 		barcode = warehouseNow()
@@ -363,24 +443,38 @@ func normalizeWarehouseRow(row map[string]string) db.WarehousePurchaseOrder {
 		date = warehouseNow()
 	}
 	return db.WarehousePurchaseOrder{
-		OrderNumber:    strings.TrimSpace(row["order_number"]),
-		Department:     strings.TrimSpace(row["department"]),
-		Applicant:      strings.TrimSpace(row["applicant"]),
-		ProjectNumber:  strings.TrimSpace(row["project_number"]),
-		ProductCode:    strings.TrimSpace(row["product_code"]),
-		ProductName:    strings.TrimSpace(row["product_name"]),
-		Specification:  strings.TrimSpace(row["specification"]),
-		Manufacturer:   strings.TrimSpace(row["manufacturer"]),
-		Quantity:       qty,
+		OrderNumber:     strings.TrimSpace(row["order_number"]),
+		Department:      strings.TrimSpace(row["department"]),
+		Applicant:       strings.TrimSpace(row["applicant"]),
+		ProjectNumber:   strings.TrimSpace(row["project_number"]),
+		ProductCode:     strings.TrimSpace(row["product_code"]),
+		ProductName:     strings.TrimSpace(row["product_name"]),
+		Specification:   strings.TrimSpace(row["specification"]),
+		Manufacturer:    strings.TrimSpace(row["manufacturer"]),
+		Quantity:        qty,
 		StockedQuantity: stocked,
-		Unit:           unit,
-		StockInDate:    date,
-		Location:       strings.TrimSpace(row["location"]),
-		Barcode:        barcode,
-		DailyNumber:    daily,
-		CreatedAt:      warehouseNow(),
-		UpdatedAt:      warehouseNow(),
+		Unit:            unit,
+		StockInDate:     date,
+		Location:        strings.TrimSpace(row["location"]),
+		Barcode:         barcode,
+		DailyNumber:     daily,
+		CreatedAt:       warehouseNow(),
+		UpdatedAt:       warehouseNow(),
 	}
+}
+
+func parseWarehouseInt(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return int(f)
+	}
+	return 0
 }
 
 func normalizeWarehouseHeader(h string) string {
