@@ -300,57 +300,11 @@ func parseWarehouseXLSX(r io.Reader) ([]db.WarehousePurchaseOrder, error) {
 		return nil, nil
 	}
 
-	headerIndex, keyByCol := findWarehouseHeaderRow(rows)
-	if headerIndex >= 0 {
-		slog.Info("warehouse xlsx header detected", "header_row", headerIndex+1, "columns", len(keyByCol), "rows", len(rows))
-		return parseWarehouseRowsByHeader(rows, headerIndex, keyByCol), nil
-	}
-
-	slog.Info("warehouse xlsx using OTAE fixed-column parser", "rows", len(rows), "data_start_row", 3)
-	return parseWarehouseRowsByOTAE(rows), nil
+	slog.Info("warehouse xlsx using fixed template parser", "rows", len(rows), "data_start_row", 3)
+	return parseWarehouseRowsByFixedTemplate(rows), nil
 }
 
-func findWarehouseHeaderRow(rows []map[string]string) (int, map[string]string) {
-	limit := len(rows)
-	if limit > 20 {
-		limit = 20
-	}
-	for i := 0; i < limit; i++ {
-		keyByCol := map[string]string{}
-		score := 0
-		for col, val := range rows[i] {
-			key := normalizeWarehouseHeader(val)
-			if key != "" && key != strings.TrimSpace(val) {
-				keyByCol[col] = key
-				score++
-			}
-		}
-		if score >= 3 {
-			return i, keyByCol
-		}
-	}
-	return -1, nil
-}
-
-func parseWarehouseRowsByHeader(rows []map[string]string, headerIndex int, keyByCol map[string]string) []db.WarehousePurchaseOrder {
-	var items []db.WarehousePurchaseOrder
-	for _, row := range rows[headerIndex+1:] {
-		m := map[string]string{}
-		for col, val := range row {
-			key := keyByCol[col]
-			if key != "" {
-				m[key] = val
-			}
-		}
-		item := normalizeWarehouseRow(m)
-		if isMeaningfulWarehouseItem(item) {
-			items = append(items, item)
-		}
-	}
-	return normalizeWarehouseItems(items)
-}
-
-func parseWarehouseRowsByOTAE(rows []map[string]string) []db.WarehousePurchaseOrder {
+func parseWarehouseRowsByFixedTemplate(rows []map[string]string) []db.WarehousePurchaseOrder {
 	var items []db.WarehousePurchaseOrder
 	for idx, row := range rows {
 		if idx < 2 {
@@ -358,7 +312,7 @@ func parseWarehouseRowsByOTAE(rows []map[string]string) []db.WarehousePurchaseOr
 		}
 		m := map[string]string{
 			"order_number":     row["Q"],
-			"department":       row["U"],
+			"department":       row["T"],
 			"applicant":        row["V"],
 			"project_number":   row["C"],
 			"product_code":     row["D"],
@@ -378,7 +332,7 @@ func parseWarehouseRowsByOTAE(rows []map[string]string) []db.WarehousePurchaseOr
 			items = append(items, item)
 		}
 	}
-	slog.Info("warehouse OTAE parser result", "items", len(items))
+	slog.Info("warehouse fixed-template parser result", "items", len(items))
 	return items
 }
 
