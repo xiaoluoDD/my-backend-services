@@ -131,6 +131,31 @@ func ClearProjectEndDate(dbConn *sql.DB, projectID int64) (cleared bool, err err
 	return true, nil
 }
 
+// ReconcileProjectEndDate 根据子任务完成情况校正项目实际完结日期。
+// 只要存在未完结子任务，就清空项目实际完结日期；若全部已完结，则保持原状。
+func ReconcileProjectEndDate(dbConn *sql.DB, projectID int64) (cleared bool, err error) {
+	p, err := GetProject(dbConn, projectID)
+	if err != nil {
+		return false, err
+	}
+	if normalizeDateString(p.EndDate) == "" {
+		return false, nil
+	}
+	allDone, _, _, err := AllProjectSubtasksCompleted(dbConn, projectID)
+	if err != nil {
+		return false, err
+	}
+	if allDone {
+		return false, nil
+	}
+	p.EndDate = ""
+	SyncProjectStatus(&p)
+	if err := UpdateProject(dbConn, p); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // DeleteProject 删除项目。
 func DeleteProject(db *sql.DB, id int64) error {
 	if id <= 0 {

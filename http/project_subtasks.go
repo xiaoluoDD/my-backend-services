@@ -106,8 +106,8 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	// 已完结项目再新增子任务：清空实际完结日期并重算项目状态
-	cleared, err := db.ClearProjectEndDate(sqlDB, s.ProjectID)
+	// 子任务新增后若项目仍存在未完结子任务，则清空实际完结日期
+	cleared, err := db.ReconcileProjectEndDate(sqlDB, s.ProjectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
@@ -172,6 +172,13 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	cleared, err := db.ReconcileProjectEndDate(sqlDB, s.ProjectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	updated, err := loadSubtaskWithMembers(s.ID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -182,7 +189,7 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 	notifyNewSubtaskMembers(s.ProjectID, updated, addedMembers, wasOnProject)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok": true, "msg": "子任务已更新", "subtask": updated,
+		"ok": true, "msg": map[bool]string{true: "子任务已更新；项目实际完结日期已按子任务状态重算", false: "子任务已更新"}[cleared], "subtask": updated,
 	})
 }
 
@@ -213,7 +220,14 @@ func deleteProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	cleared, err := db.ReconcileProjectEndDate(sqlDB, before.ProjectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok": true, "msg": "子任务已删除", "id": id,
+		"ok": true, "msg": map[bool]string{true: "子任务已删除；项目实际完结日期已按子任务状态重算", false: "子任务已删除"}[cleared], "id": id,
 	})
 }
