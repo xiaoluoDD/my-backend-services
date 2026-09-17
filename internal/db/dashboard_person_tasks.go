@@ -29,8 +29,9 @@ func personKeyMatches(target personKey, userid, name string) bool {
 	return false
 }
 
-// ListDashboardPersonTasks 返回责任人相关的子任务明细；status 为空表示全部状态。
-func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year string) ([]DashboardPersonTaskRow, error) {
+// ListDashboardPersonTasks 返回责任人相关的子任务明细。
+// status / role 为空表示不过滤；role 取值 project_manager（相关责任人）或 subtask_owner（子任务责任人）。
+func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year, role string) ([]DashboardPersonTaskRow, error) {
 	projects, err := ListProjects(db)
 	if err != nil {
 		return nil, err
@@ -47,6 +48,7 @@ func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year string) ([]
 	}
 
 	status = strings.TrimSpace(status)
+	role = strings.TrimSpace(role)
 	filtered := filterProjectsByYear(projects, year)
 	rowsBySubtaskID := make(map[int64]DashboardPersonTaskRow)
 
@@ -62,13 +64,29 @@ func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year string) ([]
 
 			ownerKey := makePersonKey(subtask.OwnerUserID, subtask.OwnerName)
 			isOwner := personKeyMatches(target, ownerKey.userid, ownerKey.name)
-			if !isManager && !isOwner {
-				continue
+
+			switch role {
+			case dashboardPersonRoleManager:
+				if !isManager {
+					continue
+				}
+			case dashboardPersonRoleSubOwner:
+				if !isOwner {
+					continue
+				}
+			default:
+				if !isManager && !isOwner {
+					continue
+				}
 			}
 
-			role := dashboardPersonRoleSubOwner
-			if isManager && !isOwner {
-				role = dashboardPersonRoleManager
+			rowRole := dashboardPersonRoleSubOwner
+			if role == dashboardPersonRoleManager {
+				rowRole = dashboardPersonRoleManager
+			} else if role == dashboardPersonRoleSubOwner {
+				rowRole = dashboardPersonRoleSubOwner
+			} else if isManager && !isOwner {
+				rowRole = dashboardPersonRoleManager
 			}
 
 			row := DashboardPersonTaskRow{
@@ -77,11 +95,11 @@ func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year string) ([]
 				ProjectName: strings.TrimSpace(project.Name),
 				SubtaskID:   subtask.ID,
 				Content:     strings.TrimSpace(subtask.Content),
-				Role:        role,
+				Role:        rowRole,
 				Status:      subtaskStatus,
 			}
 			if existing, ok := rowsBySubtaskID[subtask.ID]; ok {
-				if existing.Role == dashboardPersonRoleManager && role == dashboardPersonRoleSubOwner {
+				if existing.Role == dashboardPersonRoleManager && rowRole == dashboardPersonRoleSubOwner {
 					rowsBySubtaskID[subtask.ID] = row
 				}
 				continue

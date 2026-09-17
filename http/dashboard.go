@@ -49,7 +49,8 @@ func handleDashboardPersonTasks(w http.ResponseWriter, r *http.Request) {
 
 	status := r.URL.Query().Get("status")
 	year := r.URL.Query().Get("year")
-	rows, err := db.ListDashboardPersonTasks(sqlDB, userid, name, status, year)
+	role := r.URL.Query().Get("role")
+	rows, err := db.ListDashboardPersonTasks(sqlDB, userid, name, status, year, role)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": err.Error(),
