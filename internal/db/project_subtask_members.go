@@ -11,7 +11,7 @@ func ListSubtaskMembers(db *sql.DB, subtaskID int64) ([]ProjectMember, error) {
 		return nil, fmt.Errorf("无效的子任务 ID")
 	}
 	rows, err := db.Query(
-		`SELECT sm.userid, sm.name, COALESCE(d.name, u.departments, '')
+		`SELECT sm.userid, sm.name, COALESCE(d.name, '')
 		 FROM project_subtask_members sm
 		 LEFT JOIN app_users u ON sm.userid = u.userid
 		 LEFT JOIN departments d ON u.department_id = d.id
@@ -32,7 +32,7 @@ func ListSubtaskMembersMapByProject(db *sql.DB, projectID int64) (map[int64][]Pr
 		return nil, fmt.Errorf("无效的项目 ID")
 	}
 	rows, err := db.Query(
-		`SELECT sm.subtask_id, sm.userid, sm.name, COALESCE(d.name, u.departments, '')
+		`SELECT sm.subtask_id, sm.userid, sm.name, COALESCE(d.name, '')
 		 FROM project_subtask_members sm
 		 INNER JOIN project_subtasks st ON st.id = sm.subtask_id
 		 LEFT JOIN app_users u ON sm.userid = u.userid
@@ -61,7 +61,7 @@ func ListSubtaskMembersMapByProject(db *sql.DB, projectID int64) (map[int64][]Pr
 // ListAllSubtaskMembersMap 返回全部子任务的成员映射。
 func ListAllSubtaskMembersMap(db *sql.DB) (map[int64][]ProjectMember, error) {
 	rows, err := db.Query(
-		`SELECT sm.subtask_id, sm.userid, sm.name, COALESCE(d.name, u.departments, '')
+		`SELECT sm.subtask_id, sm.userid, sm.name, COALESCE(d.name, '')
 		 FROM project_subtask_members sm
 		 LEFT JOIN app_users u ON sm.userid = u.userid
 		 LEFT JOIN departments d ON u.department_id = d.id
@@ -90,7 +90,7 @@ func ListSubtaskMembersUnionByProject(db *sql.DB, projectID int64) ([]ProjectMem
 		return nil, fmt.Errorf("无效的项目 ID")
 	}
 	rows, err := db.Query(
-		`SELECT sm.userid, MAX(sm.name), COALESCE(MAX(d.name), MAX(u.departments), '')
+		`SELECT sm.userid, MAX(sm.name), COALESCE(MAX(d.name), '')
 		 FROM project_subtask_members sm
 		 INNER JOIN project_subtasks st ON st.id = sm.subtask_id
 		 LEFT JOIN app_users u ON sm.userid = u.userid
@@ -110,7 +110,7 @@ func ListSubtaskMembersUnionByProject(db *sql.DB, projectID int64) ([]ProjectMem
 // ListSubtaskMembersUnionMapAllProjects 批量返回各项目的子任务成员（去重）。
 func ListSubtaskMembersUnionMapAllProjects(db *sql.DB) (map[int64][]ProjectMember, error) {
 	rows, err := db.Query(
-		`SELECT st.project_id, sm.userid, MAX(sm.name), COALESCE(MAX(d.name), MAX(u.departments), '')
+		`SELECT st.project_id, sm.userid, MAX(sm.name), COALESCE(MAX(d.name), '')
 		 FROM project_subtask_members sm
 		 INNER JOIN project_subtasks st ON st.id = sm.subtask_id
 		 LEFT JOIN app_users u ON sm.userid = u.userid

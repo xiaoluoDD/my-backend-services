@@ -123,6 +123,26 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 		}
 	}
 
+	// 将企业微信部门结构导入/关联为本地部门表，部门以企业微信通讯录为唯一权威来源。
+	// wecomToLocalDept: 企业微信部门ID -> 本地部门ID，用于下面给每个成员写入 department_id。
+	wecomToLocalDept := map[int]int64{}
+	if len(departments) > 0 {
+		inputs := make([]db.WecomDepartmentInput, 0, len(departments))
+		for _, d := range departments {
+			if d.Name == "" {
+				continue
+			}
+			inputs = append(inputs, db.WecomDepartmentInput{ID: d.ID, Name: d.Name})
+		}
+		mapping, mapErr := db.UpsertWecomDepartments(sqlDB, inputs)
+		if mapErr != nil {
+			log.Warn("同步企业微信部门结构失败", "err", mapErr)
+		} else {
+			wecomToLocalDept = mapping
+			log.Info("sync: departments imported", "count", len(mapping))
+		}
+	}
+
 	if len(departments) > 0 {
 		deptIndex, idxErr := BuildUserDepartmentIndex(token, departments)
 		if idxErr != nil {
@@ -146,13 +166,23 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 	now := time.Now().Format(time.RFC3339)
 	users := make([]db.AppUser, 0, len(members))
 	for _, m := range members {
+		// 取该成员在企业微信里第一个能映射到本地部门的部门作为其主部门，
+		// 直接决定 app_users.department_id（成员选人、项目/子任务展示均以此为准）。
+		var deptID int64
+		for _, wid := range m.Departments {
+			if lid, ok := wecomToLocalDept[wid]; ok && lid > 0 {
+				deptID = lid
+				break
+			}
+		}
 		users = append(users, db.AppUser{
-			UserID:      m.UserID,
-			Name:        m.Name,
-			Mobile:      m.Mobile,
-			Departments: FormatDepartmentNames(m.Departments, deptNames),
-			Sources:     joinSources(m.Sources),
-			UpdatedAt:   now,
+			UserID:       m.UserID,
+			Name:         m.Name,
+			Mobile:       m.Mobile,
+			Departments:  FormatDepartmentNames(m.Departments, deptNames),
+			DepartmentID: deptID,
+			Sources:      joinSources(m.Sources),
+			UpdatedAt:    now,
 		})
 	}
 

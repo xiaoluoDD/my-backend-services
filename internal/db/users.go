@@ -121,13 +121,19 @@ func ReplaceAppUsers(db *sql.DB, users []AppUser) error {
 		return err
 	}
 
+	// 部门以企业微信通讯录同步结果为权威来源：
+	// - excluded.department_id > 0（本次同步在企业微信里找到了对应部门）时，直接覆盖，
+	//   保证成员部门始终跟随企业微信组织架构变化。
+	// - 否则（本次未能取到部门，例如接口失败或该成员不在任何可见部门）保留原有值，
+	//   避免把已有的部门归属清空。
 	stmt, err := tx.Prepare(
 		`INSERT INTO app_users (userid, name, mobile, departments, department_id, sources, active, updated_at)
-		 VALUES (?, ?, ?, ?, 0, ?, 1, ?)
+		 VALUES (?, ?, ?, ?, ?, ?, 1, ?)
 		 ON CONFLICT(userid) DO UPDATE SET
 		   name=excluded.name,
 		   mobile=CASE WHEN excluded.mobile != '' THEN excluded.mobile ELSE app_users.mobile END,
-		   departments=CASE WHEN app_users.department_id > 0 THEN app_users.departments ELSE excluded.departments END,
+		   departments=excluded.departments,
+		   department_id=CASE WHEN excluded.department_id > 0 THEN excluded.department_id ELSE app_users.department_id END,
 		   sources=excluded.sources,
 		   active=1,
 		   updated_at=excluded.updated_at`,
@@ -142,7 +148,7 @@ func ReplaceAppUsers(db *sql.DB, users []AppUser) error {
 		if updated == "" {
 			updated = now
 		}
-		if _, err := stmt.Exec(u.UserID, u.Name, u.Mobile, u.Departments, u.Sources, updated); err != nil {
+		if _, err := stmt.Exec(u.UserID, u.Name, u.Mobile, u.Departments, u.DepartmentID, u.Sources, updated); err != nil {
 			return err
 		}
 	}

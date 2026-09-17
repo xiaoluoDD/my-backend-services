@@ -52,7 +52,7 @@ func ListProjectMembers(db *sql.DB, projectID int64) ([]ProjectMember, error) {
 
 func listProjectMembersBySource(db *sql.DB, projectID int64, source string) ([]ProjectMember, error) {
 	rows, err := db.Query(
-		`SELECT pm.userid, pm.name, COALESCE(d.name, u.departments, '')
+		`SELECT pm.userid, pm.name, COALESCE(d.name, '')
 		 FROM project_members pm
 		 LEFT JOIN app_users u ON pm.userid = u.userid
 		 LEFT JOIN departments d ON u.department_id = d.id

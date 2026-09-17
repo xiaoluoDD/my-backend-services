@@ -191,6 +191,17 @@ func migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "project_members", "source", "TEXT NOT NULL DEFAULT 'explicit'"); err != nil {
 		return err
 	}
+	// wecom_dept_id：部门是否来自企业微信通讯录同步（>0 表示已与企业微信部门关联，
+	// 名称由企业微信通讯录决定；=0 表示纯手动创建的部门）。
+	if err := ensureColumn(db, "departments", "wecom_dept_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_departments_wecom_id
+		 ON departments(wecom_dept_id) WHERE wecom_dept_id > 0`,
+	); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
 	if err := createWarehouseTables(db); err != nil {
 		return err
 	}

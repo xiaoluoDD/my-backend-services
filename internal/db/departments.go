@@ -7,11 +7,18 @@ import (
 	"time"
 )
 
-// Department 手动维护的部门。
+// Department 部门。既可以是手动创建的部门（WecomDeptID=0），
+// 也可以是从企业微信通讯录同步导入的部门（WecomDeptID>0，名称以企业微信为准）。
 type Department struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	UpdatedAt string `json:"updated_at"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	WecomDeptID int64  `json:"wecom_dept_id"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+// IsFromWecom 是否为企业微信同步导入的部门。
+func (d Department) IsFromWecom() bool {
+	return d.WecomDeptID > 0
 }
 
 // DepartmentView 部门及其成员列表。
@@ -24,7 +31,7 @@ type DepartmentView struct {
 // ListDepartments 返回全部部门（按名称排序）。
 func ListDepartments(db *sql.DB) ([]Department, error) {
 	rows, err := db.Query(
-		`SELECT id, name, updated_at FROM departments ORDER BY name, id`,
+		`SELECT id, name, wecom_dept_id, updated_at FROM departments ORDER BY name, id`,
 	)
 	if err != nil {
 		return nil, err
@@ -34,7 +41,7 @@ func ListDepartments(db *sql.DB) ([]Department, error) {
 	var list []Department
 	for rows.Next() {
 		var d Department
-		if err := rows.Scan(&d.ID, &d.Name, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.WecomDeptID, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, d)
@@ -78,12 +85,12 @@ func membersIf(include bool, members []AppUser) []AppUser {
 func GetDepartment(db *sql.DB, id int64) (Department, error) {
 	var d Department
 	err := db.QueryRow(
-		`SELECT id, name, updated_at FROM departments WHERE id=?`, id,
-	).Scan(&d.ID, &d.Name, &d.UpdatedAt)
+		`SELECT id, name, wecom_dept_id, updated_at FROM departments WHERE id=?`, id,
+	).Scan(&d.ID, &d.Name, &d.WecomDeptID, &d.UpdatedAt)
 	return d, err
 }
 
-// CreateDepartment 新建部门。
+// CreateDepartment 新建部门（始终为手动部门，wecom_dept_id=0）。
 func CreateDepartment(db *sql.DB, name string) (int64, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -99,7 +106,8 @@ func CreateDepartment(db *sql.DB, name string) (int64, error) {
 	return res.LastInsertId()
 }
 
-// UpdateDepartment 更新部门名称。
+// UpdateDepartment 更新部门名称（仅限手动创建的部门；企业微信同步导入的部门名称
+// 以企业微信通讯录为准，会在下次同步时被覆盖，因此禁止在本地手动修改）。
 func UpdateDepartment(db *sql.DB, id int64, name string) error {
 	if id <= 0 {
 		return fmt.Errorf("无效的部门 ID")
@@ -107,6 +115,13 @@ func UpdateDepartment(db *sql.DB, id int64, name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("部门名称不能为空")
+	}
+	existing, err := GetDepartment(db, id)
+	if err != nil {
+		return err
+	}
+	if existing.IsFromWecom() {
+		return fmt.Errorf("该部门来自企业微信通讯录同步，名称请在企业微信管理后台修改，同步后会自动更新")
 	}
 	now := time.Now().Format(time.RFC3339)
 	res, err := db.Exec(
@@ -157,6 +172,94 @@ func DeleteDepartment(db *sql.DB, id int64) error {
 		return sql.ErrNoRows
 	}
 	return tx.Commit()
+}
+
+// WecomDepartmentInput 供企业微信同步流程传入的部门原始信息（避免 db 包反向依赖 wecom 包）。
+type WecomDepartmentInput struct {
+	ID   int
+	Name string
+}
+
+// UpsertWecomDepartments 将企业微信通讯录的部门结构导入/同步为本地部门表，
+// 使部门以企业微信组织架构为唯一权威来源。规则：
+//  1. 已通过 wecom_dept_id 关联过的部门：按企业微信最新名称更新（企业微信部门改名会自动同步）。
+//  2. 尚未关联、但名称与某个"纯手动创建"的部门完全一致：自动关联，避免出现重复部门。
+//  3. 其余：新建本地部门并关联。
+//
+// 返回值：企业微信部门 ID -> 本地部门 ID 的映射，供同步成员时写入 app_users.department_id。
+func UpsertWecomDepartments(sqlDB *sql.DB, depts []WecomDepartmentInput) (map[int]int64, error) {
+	tx, err := sqlDB.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	now := time.Now().Format(time.RFC3339)
+	result := make(map[int]int64, len(depts))
+
+	for _, wd := range depts {
+		if wd.ID <= 0 || strings.TrimSpace(wd.Name) == "" {
+			continue
+		}
+		name := strings.TrimSpace(wd.Name)
+
+		var localID int64
+		err := tx.QueryRow(`SELECT id FROM departments WHERE wecom_dept_id=?`, wd.ID).Scan(&localID)
+		if err == nil {
+			// 已关联：名称以企业微信为准，保持最新。
+			if _, err := tx.Exec(
+				`UPDATE departments SET name=?, updated_at=? WHERE id=?`, name, now, localID,
+			); err != nil {
+				return nil, fmt.Errorf("更新企业微信部门 %s: %w", name, err)
+			}
+			result[wd.ID] = localID
+			continue
+		}
+		if err != sql.ErrNoRows {
+			return nil, err
+		}
+
+		// 未关联：按名称匹配现有的纯手动部门，自动关联，避免产生重复部门。
+		err = tx.QueryRow(
+			`SELECT id FROM departments WHERE name=? COLLATE NOCASE AND wecom_dept_id=0`, name,
+		).Scan(&localID)
+		if err == nil {
+			if _, err := tx.Exec(
+				`UPDATE departments SET wecom_dept_id=?, updated_at=? WHERE id=?`, wd.ID, now, localID,
+			); err != nil {
+				return nil, fmt.Errorf("关联企业微信部门 %s: %w", name, err)
+			}
+			result[wd.ID] = localID
+			continue
+		}
+		if err != sql.ErrNoRows {
+			return nil, err
+		}
+
+		// 全新部门：插入；名称与其他部门冲突时追加部门号加以区分。
+		insertName := name
+		res, insertErr := tx.Exec(
+			`INSERT INTO departments (name, wecom_dept_id, updated_at) VALUES (?, ?, ?)`,
+			insertName, wd.ID, now,
+		)
+		if insertErr != nil {
+			insertName = fmt.Sprintf("%s（部门#%d）", name, wd.ID)
+			res, insertErr = tx.Exec(
+				`INSERT INTO departments (name, wecom_dept_id, updated_at) VALUES (?, ?, ?)`,
+				insertName, wd.ID, now,
+			)
+			if insertErr != nil {
+				return nil, fmt.Errorf("新建企业微信部门 %s: %w", name, insertErr)
+			}
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return nil, err
+		}
+		result[wd.ID] = id
+	}
+
+	return result, tx.Commit()
 }
 
 // ListUsersByDepartmentID 返回指定部门的成员。
