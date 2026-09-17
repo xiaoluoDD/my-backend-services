@@ -139,6 +139,66 @@ func TestMultiDepartmentSync(t *testing.T) {
 	}
 }
 
+// TestDeleteManualDepartments 校验批量清理只删除纯手动部门（wecom_dept_id=0），
+// 企业微信同步导入的部门不受影响，且被清理部门下成员的归属会被解除。
+func TestDeleteManualDepartments(t *testing.T) {
+	dir := t.TempDir()
+	sqlDB, err := Open(filepath.Join(dir, "cleanup.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqlDB.Close()
+
+	// 企业微信同步部门
+	mapping, err := UpsertWecomDepartments(sqlDB, []WecomDepartmentInput{{ID: 100, Name: "研发部"}})
+	if err != nil {
+		t.Fatalf("upsert depts: %v", err)
+	}
+	rdID := mapping[100]
+
+	// 模拟历史遗留的纯手动部门（直接写库，绕过已停用的 CreateDepartment）
+	res, err := sqlDB.Exec(`INSERT INTO departments (name, wecom_dept_id, updated_at) VALUES ('手动旧部门', 0, '2026-01-01')`)
+	if err != nil {
+		t.Fatalf("insert manual dept: %v", err)
+	}
+	manualID, _ := res.LastInsertId()
+
+	if err := ReplaceAppUsers(sqlDB, []AppUser{
+		{UserID: "lisi", Name: "李四", DepartmentIDs: []int64{rdID}, Sources: "party:100"},
+	}); err != nil {
+		t.Fatalf("replace users: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO app_user_departments (userid, department_id) VALUES ('lisi', ?)`, manualID,
+	); err != nil {
+		t.Fatalf("link manual dept: %v", err)
+	}
+
+	deleted, err := DeleteManualDepartments(sqlDB)
+	if err != nil {
+		t.Fatalf("delete manual departments: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("expected 1 manual department deleted, got %d", deleted)
+	}
+
+	depts, err := ListDepartments(sqlDB)
+	if err != nil {
+		t.Fatalf("list departments: %v", err)
+	}
+	if len(depts) != 1 || depts[0].ID != rdID {
+		t.Fatalf("expected only wecom dept remaining, got %+v", depts)
+	}
+
+	u, err := GetAppUser(sqlDB, "lisi")
+	if err != nil {
+		t.Fatalf("get app user: %v", err)
+	}
+	if len(u.DepartmentIDs) != 1 || u.DepartmentIDs[0] != rdID {
+		t.Fatalf("expected lisi to keep only wecom dept, got %v", u.DepartmentIDs)
+	}
+}
+
 func splitDeptNames(s string) []string {
 	if s == "" {
 		return nil

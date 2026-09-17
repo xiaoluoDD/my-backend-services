@@ -187,6 +187,39 @@ func DeleteDepartment(db *sql.DB, id int64) error {
 	return tx.Commit()
 }
 
+// DeleteManualDepartments 批量删除所有"纯手动创建"（wecom_dept_id=0）的部门，
+// 用于一次性清理改用企业微信同步部门之前遗留下来的旧手动部门。
+// 逐个走 DeleteDepartment，复用其级联清理与兼容字段重算逻辑。返回实际删除的部门数量。
+func DeleteManualDepartments(sqlDB *sql.DB) (int, error) {
+	rows, err := sqlDB.Query(`SELECT id FROM departments WHERE wecom_dept_id=0`)
+	if err != nil {
+		return 0, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	deleted := 0
+	for _, id := range ids {
+		if err := DeleteDepartment(sqlDB, id); err != nil {
+			return deleted, fmt.Errorf("删除手动部门 #%d: %w", id, err)
+		}
+		deleted++
+	}
+	return deleted, nil
+}
+
 func queryUserIDs(tx *sql.Tx, query string, args ...interface{}) ([]string, error) {
 	rows, err := tx.Query(query, args...)
 	if err != nil {

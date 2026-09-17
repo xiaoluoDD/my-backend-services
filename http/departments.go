@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -118,6 +119,29 @@ func deleteDepartment(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": "部门已删除",
+	})
+}
+
+// handleDeleteManualDepartments 一次性清理所有纯手动创建（非企业微信同步）的旧部门。
+func handleDeleteManualDepartments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+			"ok": false, "error": "请使用 POST",
+		})
+		return
+	}
+	if !requireEditProjects(w, r) {
+		return
+	}
+	count, err := db.DeleteManualDepartments(sqlDB)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(), "deleted": count,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true, "msg": fmt.Sprintf("已删除 %d 个手动创建的部门", count), "deleted": count,
 	})
 }
 

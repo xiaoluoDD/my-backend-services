@@ -183,6 +183,7 @@ func main() {
 	http.HandleFunc("/api/dashboard/person-tasks", handleDashboardPersonTasks)
 	http.HandleFunc("/api/changelog", handleChangelog)
 	http.HandleFunc("/api/departments", handleDepartments)
+	http.HandleFunc("/api/departments/cleanup-manual", handleDeleteManualDepartments)
 	http.HandleFunc("/api/db/export", handleDBExport)
 	http.HandleFunc("/api/db/download", handleDBDownload)
 	http.HandleFunc("/api/wecom/send-group", handleWecomSendGroup)
@@ -199,6 +200,7 @@ func main() {
 		"wecom_sync", "GET|POST /api/wecom/sync",
 		"wecom_users", "GET|PUT /api/wecom/users",
 		"departments", "GET|POST|PUT|DELETE /api/departments",
+		"departments_cleanup_manual", "POST /api/departments/cleanup-manual",
 		"wecom_stats", "GET /api/wecom/stats",
 		"settings", "GET|PUT /api/settings",
 		"auth_login", "POST /api/auth/login",
