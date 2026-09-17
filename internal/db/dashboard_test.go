@@ -87,10 +87,13 @@ func TestListDashboardPersonTasksRoleFilter(t *testing.T) {
 	}
 	if _, err := CreateProjectSubtask(sqlDB, ProjectSubtask{
 		ProjectID:   projectID,
-		Content:     "经理负责的子任务也算项目视角",
-		OwnerUserID: "own1",
-		OwnerName:   "子任务人",
+		Content:     "成员参与的子任务",
+		OwnerUserID: "mgr1",
+		OwnerName:   "项目经理",
 		Status:      "进行中",
+		Members: []ProjectMember{
+			{UserID: "mem1", Name: "子任务成员"},
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -106,23 +109,54 @@ func TestListDashboardPersonTasksRoleFilter(t *testing.T) {
 		t.Fatalf("manager role=%q", mgrRows[0].Role)
 	}
 
-	ownerRows, err := ListDashboardPersonTasks(sqlDB, "own1", "子任务人", "", "2026", "subtask_owner")
+	memberRows, err := ListDashboardPersonTasks(sqlDB, "mem1", "子任务成员", "", "2026", "subtask_member")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ownerRows) != 1 {
-		t.Fatalf("owner role rows=%d, want 1", len(ownerRows))
+	if len(memberRows) != 1 {
+		t.Fatalf("member role rows=%d, want 1", len(memberRows))
 	}
-	if ownerRows[0].Role != "subtask_owner" {
-		t.Fatalf("owner role=%q", ownerRows[0].Role)
+	if memberRows[0].Role != "subtask_member" {
+		t.Fatalf("member role=%q", memberRows[0].Role)
 	}
 
-	// 项目经理用子任务角色过滤时应为空
-	empty, err := ListDashboardPersonTasks(sqlDB, "mgr1", "项目经理", "", "2026", "subtask_owner")
+	// 旧别名 subtask_owner 应等价于子任务成员过滤
+	legacyRows, err := ListDashboardPersonTasks(sqlDB, "mem1", "子任务成员", "", "2026", "subtask_owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(legacyRows) != 1 {
+		t.Fatalf("legacy owner alias rows=%d, want 1", len(legacyRows))
+	}
+
+	// 仅当项目经理、不是成员时，用成员角色过滤应为空
+	empty, err := ListDashboardPersonTasks(sqlDB, "mgr1", "项目经理", "", "2026", "subtask_member")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(empty) != 0 {
-		t.Fatalf("manager filtered as subtask_owner rows=%d, want 0", len(empty))
+		t.Fatalf("manager filtered as subtask_member rows=%d, want 0", len(empty))
+	}
+
+	summary, err := SummarizeDashboard(sqlDB, "2026")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundMember := false
+	for _, g := range summary.ByPerson {
+		if g.UserID != "mem1" && g.Name != "子任务成员" {
+			continue
+		}
+		for _, row := range g.Rows {
+			if row.Role == "subtask_member" {
+				foundMember = true
+			}
+			if row.Role == "subtask_owner" {
+				t.Fatalf("unexpected legacy role in summary: %+v", row)
+			}
+		}
+	}
+	if !foundMember {
+		t.Fatal("subtask member missing from by_person summary")
 	}
 }

@@ -29,14 +29,32 @@ func personKeyMatches(target personKey, userid, name string) bool {
 	return false
 }
 
+func normalizeDashboardPersonRole(role string) string {
+	role = strings.TrimSpace(role)
+	// 兼容旧链接：曾误用 subtask_owner，现统一为子任务成员。
+	if role == dashboardPersonRoleSubOwner {
+		return dashboardPersonRoleSubMember
+	}
+	return role
+}
+
+func subtaskHasMember(subtask ProjectSubtask, target personKey) bool {
+	for _, member := range subtask.Members {
+		if personKeyMatches(target, member.UserID, member.Name) {
+			return true
+		}
+	}
+	return false
+}
+
 // ListDashboardPersonTasks 返回责任人相关的子任务明细。
-// status / role 为空表示不过滤；role 取值 project_manager（相关责任人）或 subtask_owner（子任务责任人）。
+// status / role 为空表示不过滤；role 取值 project_manager（相关责任人）或 subtask_member（子任务成员）。
 func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year, role string) ([]DashboardPersonTaskRow, error) {
 	projects, err := ListProjects(db)
 	if err != nil {
 		return nil, err
 	}
-	subtasks, err := ListAllProjectSubtasks(db)
+	subtasks, err := ListAllProjectSubtasksWithMembers(db)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +66,7 @@ func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year, role strin
 	}
 
 	status = strings.TrimSpace(status)
-	role = strings.TrimSpace(role)
+	role = normalizeDashboardPersonRole(role)
 	filtered := filterProjectsByYear(projects, year)
 	rowsBySubtaskID := make(map[int64]DashboardPersonTaskRow)
 
@@ -62,30 +80,29 @@ func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year, role strin
 				continue
 			}
 
-			ownerKey := makePersonKey(subtask.OwnerUserID, subtask.OwnerName)
-			isOwner := personKeyMatches(target, ownerKey.userid, ownerKey.name)
+			isMember := subtaskHasMember(subtask, target)
 
 			switch role {
 			case dashboardPersonRoleManager:
 				if !isManager {
 					continue
 				}
-			case dashboardPersonRoleSubOwner:
-				if !isOwner {
+			case dashboardPersonRoleSubMember:
+				if !isMember {
 					continue
 				}
 			default:
-				if !isManager && !isOwner {
+				if !isManager && !isMember {
 					continue
 				}
 			}
 
-			rowRole := dashboardPersonRoleSubOwner
+			rowRole := dashboardPersonRoleSubMember
 			if role == dashboardPersonRoleManager {
 				rowRole = dashboardPersonRoleManager
-			} else if role == dashboardPersonRoleSubOwner {
-				rowRole = dashboardPersonRoleSubOwner
-			} else if isManager && !isOwner {
+			} else if role == dashboardPersonRoleSubMember {
+				rowRole = dashboardPersonRoleSubMember
+			} else if isManager && !isMember {
 				rowRole = dashboardPersonRoleManager
 			}
 
@@ -99,7 +116,7 @@ func ListDashboardPersonTasks(db *sql.DB, userid, name, status, year, role strin
 				Status:      subtaskStatus,
 			}
 			if existing, ok := rowsBySubtaskID[subtask.ID]; ok {
-				if existing.Role == dashboardPersonRoleManager && rowRole == dashboardPersonRoleSubOwner {
+				if existing.Role == dashboardPersonRoleManager && rowRole == dashboardPersonRoleSubMember {
 					rowsBySubtaskID[subtask.ID] = row
 				}
 				continue

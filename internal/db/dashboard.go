@@ -69,10 +69,12 @@ var dashboardSubtaskStatusOrder = []string{
 }
 
 const (
-	dashboardPersonRoleManager   = "project_manager"
-	dashboardPersonRoleSubOwner  = "subtask_owner"
-	dashboardWorkNoPlaceholder   = "（无工番号）"
-	dashboardPersonNameFallback  = "（未指定）"
+	dashboardPersonRoleManager  = "project_manager"
+	dashboardPersonRoleSubMember = "subtask_member"
+	// dashboardPersonRoleSubOwner 为旧版兼容别名（曾误用 owner；现已改为成员）。
+	dashboardPersonRoleSubOwner = "subtask_owner"
+	dashboardWorkNoPlaceholder  = "（无工番号）"
+	dashboardPersonNameFallback = "（未指定）"
 )
 
 type personKey struct {
@@ -181,7 +183,7 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 		return DashboardSummary{}, err
 	}
 
-	subtasks, err := ListAllProjectSubtasks(db)
+	subtasks, err := ListAllProjectSubtasksWithMembers(db)
 	if err != nil {
 		return DashboardSummary{}, err
 	}
@@ -201,7 +203,7 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 	workNoProjectID := make(map[string]int64)
 	workNoProjectName := make(map[string]string)
 	managerBuckets := make(map[personKey]map[string]int)
-	subtaskOwnerBuckets := make(map[personKey]map[string]int)
+	subtaskMemberBuckets := make(map[personKey]map[string]int)
 	personProjectID := make(map[personKey]int64)
 
 	for _, project := range filtered {
@@ -247,14 +249,18 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 				incrementBucket(managerBuckets[managerKey], status)
 			}
 
-			ownerKey := makePersonKey(subtask.OwnerUserID, subtask.OwnerName)
-			if !personKeyIsEmpty(ownerKey) {
-				if _, ok := subtaskOwnerBuckets[ownerKey]; !ok {
-					subtaskOwnerBuckets[ownerKey] = make(map[string]int)
+			// 「子任务责任人」按子任务成员统计（owner 固定等于项目负责人，不单独展示）。
+			for _, member := range subtask.Members {
+				memberKey := makePersonKey(member.UserID, member.Name)
+				if personKeyIsEmpty(memberKey) {
+					continue
 				}
-				incrementBucket(subtaskOwnerBuckets[ownerKey], status)
-				if _, ok := personProjectID[ownerKey]; !ok {
-					personProjectID[ownerKey] = project.ID
+				if _, ok := subtaskMemberBuckets[memberKey]; !ok {
+					subtaskMemberBuckets[memberKey] = make(map[string]int)
+				}
+				incrementBucket(subtaskMemberBuckets[memberKey], status)
+				if _, ok := personProjectID[memberKey]; !ok {
+					personProjectID[memberKey] = project.ID
 				}
 			}
 		}
@@ -315,7 +321,7 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 		}
 	}
 	mergePersonRole(managerBuckets, dashboardPersonRoleManager)
-	mergePersonRole(subtaskOwnerBuckets, dashboardPersonRoleSubOwner)
+	mergePersonRole(subtaskMemberBuckets, dashboardPersonRoleSubMember)
 
 	names := make([]string, 0, len(merged))
 	for key := range merged {
