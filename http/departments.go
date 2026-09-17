@@ -160,9 +160,10 @@ func updateWecomUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		UserID       string `json:"userid"`
-		Mobile       string `json:"mobile"`
-		DepartmentID int64  `json:"department_id"`
+		UserID        string  `json:"userid"`
+		Mobile        string  `json:"mobile"`
+		DepartmentID  int64   `json:"department_id"`  // 兼容旧版单部门传参
+		DepartmentIDs []int64 `json:"department_ids"` // 一人多部门，全量替换
 	}
 	if err := json.Unmarshal(body, &req); err != nil || req.UserID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -171,7 +172,11 @@ func updateWecomUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := db.UpdateAppUser(sqlDB, req.UserID, req.Mobile, req.DepartmentID)
+	deptIDs := req.DepartmentIDs
+	if deptIDs == nil && req.DepartmentID > 0 {
+		deptIDs = []int64{req.DepartmentID}
+	}
+	updated, err := db.UpdateAppUser(sqlDB, req.UserID, req.Mobile, deptIDs)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": err.Error(),

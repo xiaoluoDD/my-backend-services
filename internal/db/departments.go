@@ -90,20 +90,11 @@ func GetDepartment(db *sql.DB, id int64) (Department, error) {
 	return d, err
 }
 
-// CreateDepartment 新建部门（始终为手动部门，wecom_dept_id=0）。
+// CreateDepartment 已停用：部门统一由企业微信通讯录同步生成（见 UpsertWecomDepartments），
+// 不再支持手动新增，避免产生与企业微信组织架构无关、导致归属混乱的部门。
+// 如需新增部门，请在企业微信管理后台创建后，点击「同步成员」即可自动导入。
 func CreateDepartment(db *sql.DB, name string) (int64, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return 0, fmt.Errorf("部门名称不能为空")
-	}
-	now := time.Now().Format(time.RFC3339)
-	res, err := db.Exec(
-		`INSERT INTO departments (name, updated_at) VALUES (?, ?)`, name, now,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
+	return 0, fmt.Errorf("部门已改为自动跟随企业微信通讯录，不支持手动新增；请在企业微信管理后台创建部门后重新同步成员")
 }
 
 // UpdateDepartment 更新部门名称（仅限手动创建的部门；企业微信同步导入的部门名称
@@ -144,7 +135,9 @@ func UpdateDepartment(db *sql.DB, id int64, name string) error {
 	return err
 }
 
-// DeleteDepartment 删除部门，并将关联成员的 department_id 清零。
+// DeleteDepartment 删除部门。该部门下成员与部门的多对多关系（app_user_departments）
+// 会通过外键级联自动清除；随后重新计算受影响成员的兼容字段（主部门 department_id/departments，
+// 取其剩余部门中的第一个，若已无任何部门归属则清零）。
 func DeleteDepartment(db *sql.DB, id int64) error {
 	if id <= 0 {
 		return fmt.Errorf("无效的部门 ID")
@@ -155,11 +148,11 @@ func DeleteDepartment(db *sql.DB, id int64) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(
-		`UPDATE app_users SET department_id=0, departments='' WHERE department_id=?`, id,
-	); err != nil {
+	affected, err := queryUserIDs(tx, `SELECT userid FROM app_user_departments WHERE department_id=?`, id)
+	if err != nil {
 		return err
 	}
+
 	res, err := tx.Exec(`DELETE FROM departments WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -171,7 +164,44 @@ func DeleteDepartment(db *sql.DB, id int64) error {
 	if n == 0 {
 		return sql.ErrNoRows
 	}
+
+	now := time.Now().Format(time.RFC3339)
+	for _, userid := range affected {
+		var newPrimaryID sql.NullInt64
+		var newPrimaryName sql.NullString
+		row := tx.QueryRow(
+			`SELECT d.id, d.name FROM app_user_departments ud
+			 INNER JOIN departments d ON d.id = ud.department_id
+			 WHERE ud.userid=? ORDER BY d.name LIMIT 1`,
+			userid,
+		)
+		_ = row.Scan(&newPrimaryID, &newPrimaryName) // 无剩余部门时保持零值，即清零
+
+		if _, err := tx.Exec(
+			`UPDATE app_users SET department_id=?, departments=?, updated_at=? WHERE userid=?`,
+			newPrimaryID.Int64, newPrimaryName.String, now, userid,
+		); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+func queryUserIDs(tx *sql.Tx, query string, args ...interface{}) ([]string, error) {
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var userid string
+		if err := rows.Scan(&userid); err != nil {
+			return nil, err
+		}
+		out = append(out, userid)
+	}
+	return out, rows.Err()
 }
 
 // WecomDepartmentInput 供企业微信同步流程传入的部门原始信息（避免 db 包反向依赖 wecom 包）。
@@ -262,14 +292,16 @@ func UpsertWecomDepartments(sqlDB *sql.DB, depts []WecomDepartmentInput) (map[in
 	return result, tx.Commit()
 }
 
-// ListUsersByDepartmentID 返回指定部门的成员。
+// ListUsersByDepartmentID 返回指定部门的成员（按多对多关系表匹配，
+// 因此一人挂多个部门时会同时出现在这几个部门的人员列表里）。
 func ListUsersByDepartmentID(db *sql.DB, deptID int64) ([]AppUser, error) {
 	rows, err := db.Query(
 		`SELECT u.userid, u.name, u.mobile, u.departments, u.department_id,
 		        COALESCE(d.name, ''), u.sources, u.updated_at
 		 FROM app_users u
+		 INNER JOIN app_user_departments ud ON ud.userid = u.userid AND ud.department_id = ?
 		 LEFT JOIN departments d ON u.department_id = d.id
-		 WHERE u.active=1 AND u.department_id=?
+		 WHERE u.active=1
 		 ORDER BY u.name, u.userid`,
 		deptID,
 	)
@@ -277,5 +309,12 @@ func ListUsersByDepartmentID(db *sql.DB, deptID int64) ([]AppUser, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanAppUsers(rows)
+	users, err := scanAppUsers(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := attachDepartments(db, users); err != nil {
+		return nil, err
+	}
+	return users, nil
 }

@@ -3,19 +3,32 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
 // AppUser 应用可见范围内的成员（持久化）。
+// 一个成员可以同时属于多个部门（对应企业微信里一人多部门的情况）：
+//   - DepartmentIDs / DepartmentList：该成员当前所属的全部部门（多对多关系表 app_user_departments）。
+//   - DepartmentID / DepartmentName：兼容字段，取 DepartmentIDs 的第一个作为"主部门"，
+//     供历史上按单部门实现的功能（如项目负责人默认部门定位）使用；新代码请优先使用 DepartmentIDs。
 type AppUser struct {
-	UserID         string `json:"userid"`
-	Name           string `json:"name"`
-	Mobile         string `json:"mobile,omitempty"`
-	Departments    string `json:"departments"`
-	DepartmentID   int64  `json:"department_id,omitempty"`
-	DepartmentName string `json:"department_name,omitempty"`
-	Sources        string `json:"sources"`
-	UpdatedAt      string `json:"updated_at"`
+	UserID         string          `json:"userid"`
+	Name           string          `json:"name"`
+	Mobile         string          `json:"mobile,omitempty"`
+	Departments    string          `json:"departments"`
+	DepartmentID   int64           `json:"department_id,omitempty"`
+	DepartmentName string          `json:"department_name,omitempty"`
+	DepartmentIDs  []int64         `json:"department_ids,omitempty"`
+	DepartmentList []DepartmentRef `json:"department_list,omitempty"`
+	Sources        string          `json:"sources"`
+	UpdatedAt      string          `json:"updated_at"`
+}
+
+// DepartmentRef 成员所属部门的简要引用。
+type DepartmentRef struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 // SyncRun 一次同步任务记录。
@@ -122,10 +135,10 @@ func ReplaceAppUsers(db *sql.DB, users []AppUser) error {
 	}
 
 	// 部门以企业微信通讯录同步结果为权威来源：
-	// - excluded.department_id > 0（本次同步在企业微信里找到了对应部门）时，直接覆盖，
-	//   保证成员部门始终跟随企业微信组织架构变化。
-	// - 否则（本次未能取到部门，例如接口失败或该成员不在任何可见部门）保留原有值，
-	//   避免把已有的部门归属清空。
+	// - 本次同步在企业微信里找到部门（len(DepartmentIDs) > 0）时，直接覆盖 app_user_departments
+	//   （多对多关系表，支持一人多部门），并把第一个部门写作兼容用的 department_id/departments。
+	// - 否则（本次未能取到部门，例如接口失败或该成员不在任何可见部门）保留原有归属，
+	//   避免把已有的部门数据清空。
 	stmt, err := tx.Prepare(
 		`INSERT INTO app_users (userid, name, mobile, departments, department_id, sources, active, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, 1, ?)
@@ -143,19 +156,52 @@ func ReplaceAppUsers(db *sql.DB, users []AppUser) error {
 	}
 	defer stmt.Close()
 
+	delDeptStmt, err := tx.Prepare(`DELETE FROM app_user_departments WHERE userid=?`)
+	if err != nil {
+		return err
+	}
+	defer delDeptStmt.Close()
+
+	insDeptStmt, err := tx.Prepare(
+		`INSERT OR IGNORE INTO app_user_departments (userid, department_id) VALUES (?, ?)`,
+	)
+	if err != nil {
+		return err
+	}
+	defer insDeptStmt.Close()
+
 	for _, u := range users {
 		updated := u.UpdatedAt
 		if updated == "" {
 			updated = now
 		}
-		if _, err := stmt.Exec(u.UserID, u.Name, u.Mobile, u.Departments, u.DepartmentID, u.Sources, updated); err != nil {
+		var primaryDeptID int64
+		if len(u.DepartmentIDs) > 0 {
+			primaryDeptID = u.DepartmentIDs[0]
+		}
+		if _, err := stmt.Exec(u.UserID, u.Name, u.Mobile, u.Departments, primaryDeptID, u.Sources, updated); err != nil {
 			return err
+		}
+		if len(u.DepartmentIDs) == 0 {
+			// 本次同步未取得该成员的部门数据，保留原有的多部门归属不动。
+			continue
+		}
+		if _, err := delDeptStmt.Exec(u.UserID); err != nil {
+			return err
+		}
+		for _, deptID := range u.DepartmentIDs {
+			if deptID <= 0 {
+				continue
+			}
+			if _, err := insDeptStmt.Exec(u.UserID, deptID); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()
 }
 
-// ListActiveUsers 列出当前有效成员。
+// ListActiveUsers 列出当前有效成员（含各自的多部门归属）。
 func ListActiveUsers(db *sql.DB) ([]AppUser, error) {
 	rows, err := db.Query(
 		`SELECT u.userid, u.name, u.mobile, u.departments, u.department_id,
@@ -169,7 +215,78 @@ func ListActiveUsers(db *sql.DB) ([]AppUser, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanAppUsers(rows)
+	users, err := scanAppUsers(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := attachDepartments(db, users); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+// attachDepartments 批量填充成员的完整部门列表（DepartmentIDs / DepartmentList），
+// 并把 DepartmentName 重写为「所有所属部门名称」的拼接（多个用「、」分隔），
+// 供成员管理等界面展示一人多部门；DepartmentID/DepartmentName 兼容字段则取第一个部门。
+func attachDepartments(sqlDB *sql.DB, users []AppUser) error {
+	if len(users) == 0 {
+		return nil
+	}
+	idx := make(map[string]int, len(users))
+	placeholders := make([]string, 0, len(users))
+	args := make([]interface{}, 0, len(users))
+	for i, u := range users {
+		if u.UserID == "" {
+			continue
+		}
+		idx[u.UserID] = i
+		placeholders = append(placeholders, "?")
+		args = append(args, u.UserID)
+	}
+	if len(placeholders) == 0 {
+		return nil
+	}
+
+	query := `SELECT ud.userid, d.id, d.name
+	          FROM app_user_departments ud
+	          INNER JOIN departments d ON d.id = ud.department_id
+	          WHERE ud.userid IN (` + strings.Join(placeholders, ",") + `)
+	          ORDER BY ud.userid, d.name`
+	rows, err := sqlDB.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userid string
+		var ref DepartmentRef
+		if err := rows.Scan(&userid, &ref.ID, &ref.Name); err != nil {
+			return err
+		}
+		i, ok := idx[userid]
+		if !ok {
+			continue
+		}
+		users[i].DepartmentList = append(users[i].DepartmentList, ref)
+		users[i].DepartmentIDs = append(users[i].DepartmentIDs, ref.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for i := range users {
+		if len(users[i].DepartmentList) == 0 {
+			continue
+		}
+		names := make([]string, len(users[i].DepartmentList))
+		for j, d := range users[i].DepartmentList {
+			names[j] = d.Name
+		}
+		users[i].DepartmentID = users[i].DepartmentList[0].ID
+		users[i].DepartmentName = strings.Join(names, "、")
+	}
+	return nil
 }
 
 func scanAppUsers(rows *sql.Rows) ([]AppUser, error) {
@@ -187,7 +304,7 @@ func scanAppUsers(rows *sql.Rows) ([]AppUser, error) {
 	return list, rows.Err()
 }
 
-// GetAppUser 按 userid 查询成员。
+// GetAppUser 按 userid 查询成员（含多部门归属）。
 func GetAppUser(db *sql.DB, userid string) (AppUser, error) {
 	row := db.QueryRow(
 		`SELECT u.userid, u.name, u.mobile, u.departments, u.department_id,
@@ -198,33 +315,63 @@ func GetAppUser(db *sql.DB, userid string) (AppUser, error) {
 		userid,
 	)
 	var u AppUser
-	err := row.Scan(
+	if err := row.Scan(
 		&u.UserID, &u.Name, &u.Mobile, &u.Departments, &u.DepartmentID,
 		&u.DepartmentName, &u.Sources, &u.UpdatedAt,
-	)
-	return u, err
+	); err != nil {
+		return AppUser{}, err
+	}
+	users := []AppUser{u}
+	if err := attachDepartments(db, users); err != nil {
+		return AppUser{}, err
+	}
+	return users[0], nil
 }
 
-// UpdateAppUser 更新成员手机号与部门（手动维护字段）。
-func UpdateAppUser(db *sql.DB, userid, mobile string, departmentID int64) (AppUser, error) {
+// UpdateAppUser 更新成员手机号与部门归属（手动维护字段，支持一人多部门）。
+// departmentIDs 为该成员应归属的完整部门列表（全量替换）；传空切片表示清空所有部门归属。
+func UpdateAppUser(db *sql.DB, userid, mobile string, departmentIDs []int64) (AppUser, error) {
 	if userid == "" {
 		return AppUser{}, fmt.Errorf("userid 不能为空")
 	}
 
-	deptName := ""
-	if departmentID > 0 {
-		d, err := GetDepartment(db, departmentID)
+	// 去重并校验部门是否存在。
+	seen := make(map[int64]struct{}, len(departmentIDs))
+	cleanIDs := make([]int64, 0, len(departmentIDs))
+	var primaryName string
+	for i, id := range departmentIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		d, err := GetDepartment(db, id)
 		if err != nil {
 			return AppUser{}, fmt.Errorf("部门不存在")
 		}
-		deptName = d.Name
+		if i == 0 || primaryName == "" {
+			primaryName = d.Name
+		}
+		cleanIDs = append(cleanIDs, id)
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		return AppUser{}, err
+	}
+	defer tx.Rollback()
+
 	now := time.Now().Format(time.RFC3339)
-	res, err := db.Exec(
+	var primaryID int64
+	if len(cleanIDs) > 0 {
+		primaryID = cleanIDs[0]
+	}
+	res, err := tx.Exec(
 		`UPDATE app_users SET mobile=?, department_id=?, departments=?, updated_at=?
 		 WHERE userid=? AND active=1`,
-		mobile, departmentID, deptName, now, userid,
+		mobile, primaryID, primaryName, now, userid,
 	)
 	if err != nil {
 		return AppUser{}, err
@@ -235,6 +382,22 @@ func UpdateAppUser(db *sql.DB, userid, mobile string, departmentID int64) (AppUs
 	}
 	if n == 0 {
 		return AppUser{}, sql.ErrNoRows
+	}
+
+	if _, err := tx.Exec(`DELETE FROM app_user_departments WHERE userid=?`, userid); err != nil {
+		return AppUser{}, err
+	}
+	for _, id := range cleanIDs {
+		if _, err := tx.Exec(
+			`INSERT OR IGNORE INTO app_user_departments (userid, department_id) VALUES (?, ?)`,
+			userid, id,
+		); err != nil {
+			return AppUser{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return AppUser{}, err
 	}
 	return GetAppUser(db, userid)
 }

@@ -102,6 +102,14 @@ func migrate(db *sql.DB) error {
 			name TEXT NOT NULL UNIQUE COLLATE NOCASE,
 			updated_at TEXT NOT NULL
 		)`,
+		// app_user_departments：成员与部门的多对多关系（一人可属于多个企业微信部门）。
+		`CREATE TABLE IF NOT EXISTS app_user_departments (
+			userid TEXT NOT NULL,
+			department_id INTEGER NOT NULL,
+			PRIMARY KEY (userid, department_id),
+			FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_app_user_departments_dept ON app_user_departments(department_id)`,
 		`CREATE TABLE IF NOT EXISTS project_subtasks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_id INTEGER NOT NULL,
@@ -201,6 +209,14 @@ func migrate(db *sql.DB) error {
 		 ON departments(wecom_dept_id) WHERE wecom_dept_id > 0`,
 	); err != nil {
 		return fmt.Errorf("migrate: %w", err)
+	}
+	// 历史数据迁移：把旧的单部门字段 app_users.department_id 回填进多对多关系表，
+	// 之后该字段仅作为「主部门」兼容展示用，真正的归属以 app_user_departments 为准。
+	if _, err := db.Exec(
+		`INSERT OR IGNORE INTO app_user_departments (userid, department_id)
+		 SELECT userid, department_id FROM app_users WHERE department_id > 0`,
+	); err != nil {
+		return fmt.Errorf("migrate: backfill app_user_departments: %w", err)
 	}
 	if err := createWarehouseTables(db); err != nil {
 		return err

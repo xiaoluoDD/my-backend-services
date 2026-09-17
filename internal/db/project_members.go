@@ -17,6 +17,20 @@ type ProjectMember struct {
 	DepartmentName string `json:"department_name,omitempty"`
 }
 
+// deptNamesSubquery 生成一个相关子查询表达式，返回 userExpr 对应成员当前所属的
+// 全部部门名称（用「、」拼接，一人多部门时全部展示，而不是只显示一个）。
+// userExpr 需为外层查询里可引用的成员 userid 列/表达式，例如 "pm.userid"。
+func deptNamesSubquery(userExpr string) string {
+	// 内层子查询先按名称排序，再 GROUP_CONCAT，保证多部门拼接顺序稳定
+	// （SQLite 的 GROUP_CONCAT 本身不支持 ORDER BY 子句）。
+	return `SELECT GROUP_CONCAT(name, '、') FROM (
+	          SELECT d.name AS name FROM app_user_departments ud
+	          INNER JOIN departments d ON d.id = ud.department_id
+	          WHERE ud.userid = ` + userExpr + `
+	          ORDER BY d.name
+	        )`
+}
+
 // ListExplicitProjectMembers 返回项目编辑时指定的成员（不含子任务同步成员）。
 func ListExplicitProjectMembers(db *sql.DB, projectID int64) ([]ProjectMember, error) {
 	return listProjectMembersBySource(db, projectID, ProjectMemberSourceExplicit)
@@ -52,10 +66,8 @@ func ListProjectMembers(db *sql.DB, projectID int64) ([]ProjectMember, error) {
 
 func listProjectMembersBySource(db *sql.DB, projectID int64, source string) ([]ProjectMember, error) {
 	rows, err := db.Query(
-		`SELECT pm.userid, pm.name, COALESCE(d.name, '')
+		`SELECT pm.userid, pm.name, COALESCE((`+deptNamesSubquery("pm.userid")+`), '')
 		 FROM project_members pm
-		 LEFT JOIN app_users u ON pm.userid = u.userid
-		 LEFT JOIN departments d ON u.department_id = d.id
 		 WHERE pm.project_id=? AND pm.source=?
 		 ORDER BY pm.name, pm.userid`,
 		projectID, source,

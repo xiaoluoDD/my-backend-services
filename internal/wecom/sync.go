@@ -166,23 +166,29 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 	now := time.Now().Format(time.RFC3339)
 	users := make([]db.AppUser, 0, len(members))
 	for _, m := range members {
-		// 取该成员在企业微信里第一个能映射到本地部门的部门作为其主部门，
-		// 直接决定 app_users.department_id（成员选人、项目/子任务展示均以此为准）。
-		var deptID int64
+		// 一人可能同时属于多个企业微信部门：把所有能映射到本地部门的部门都记下来，
+		// 全部写入 app_user_departments（多对多），不再只取第一个。
+		deptIDs := make([]int64, 0, len(m.Departments))
+		seen := make(map[int64]struct{}, len(m.Departments))
 		for _, wid := range m.Departments {
-			if lid, ok := wecomToLocalDept[wid]; ok && lid > 0 {
-				deptID = lid
-				break
+			lid, ok := wecomToLocalDept[wid]
+			if !ok || lid <= 0 {
+				continue
 			}
+			if _, dup := seen[lid]; dup {
+				continue
+			}
+			seen[lid] = struct{}{}
+			deptIDs = append(deptIDs, lid)
 		}
 		users = append(users, db.AppUser{
-			UserID:       m.UserID,
-			Name:         m.Name,
-			Mobile:       m.Mobile,
-			Departments:  FormatDepartmentNames(m.Departments, deptNames),
-			DepartmentID: deptID,
-			Sources:      joinSources(m.Sources),
-			UpdatedAt:    now,
+			UserID:        m.UserID,
+			Name:          m.Name,
+			Mobile:        m.Mobile,
+			Departments:   FormatDepartmentNames(m.Departments, deptNames),
+			DepartmentIDs: deptIDs,
+			Sources:       joinSources(m.Sources),
+			UpdatedAt:     now,
 		})
 	}
 
