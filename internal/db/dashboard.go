@@ -46,13 +46,14 @@ type DashboardPersonGroup struct {
 
 // DashboardSummary 总览看板汇总。
 type DashboardSummary struct {
-	Year           string                  `json:"year"`
-	Years          []string                `json:"years"`
-	ProjectCount   int                     `json:"project_count"`
-	ProjectSummary DashboardProjectSummary `json:"project_summary"`
-	ProjectPie     []DashboardStatusCount  `json:"project_pie"`
-	ByWorkNo       []DashboardWorkNoGroup  `json:"by_work_no"`
-	ByPerson       []DashboardPersonGroup  `json:"by_person"`
+	Year                     string                      `json:"year"`
+	Years                    []string                    `json:"years"`
+	ProjectCount             int                         `json:"project_count"`
+	ProjectSummary           DashboardProjectSummary     `json:"project_summary"`
+	ProjectPie               []DashboardStatusCount      `json:"project_pie"`
+	ByWorkNo                 []DashboardWorkNoGroup      `json:"by_work_no"`
+	ByPerson                 []DashboardPersonGroup      `json:"by_person"`
+	ByDepartmentPunctuality  []DashboardDeptPunctuality  `json:"by_department_punctuality"`
 }
 
 var dashboardProjectStatusOrder = []string{
@@ -188,6 +189,11 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 		return DashboardSummary{}, err
 	}
 	subtasksByProject := groupSubtasksByProject(subtasks)
+
+	userDepts, err := mapUserDepartments(db)
+	if err != nil {
+		return DashboardSummary{}, err
+	}
 
 	years := collectProjectYears(projects)
 	filtered := filterProjectsByYear(projects, year)
@@ -341,6 +347,8 @@ func SummarizeDashboard(db *sql.DB, year string) (DashboardSummary, error) {
 			break
 		}
 	}
+
+	result.ByDepartmentPunctuality = buildDepartmentPunctuality(filtered, subtasksByProject, userDepts)
 
 	return result, nil
 }
