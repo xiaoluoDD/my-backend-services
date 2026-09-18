@@ -22,3 +22,6 @@ data/
 # 临时文件
 *.swp
 *.swo
+
+# Go 构建缓存（误生成在仓库内）
+.gocache-analysis/
