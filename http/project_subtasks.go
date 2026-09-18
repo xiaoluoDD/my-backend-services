@@ -304,6 +304,8 @@ func handleProjectSubtasksBatch(w http.ResponseWriter, r *http.Request) {
 		content := strings.TrimSpace(raw.Content)
 		hasExtra := strings.TrimSpace(raw.PlannedStartDate) != "" ||
 			strings.TrimSpace(raw.PlannedEndDate) != "" ||
+			strings.TrimSpace(raw.ActualStartDate) != "" ||
+			strings.TrimSpace(raw.ActualEndDate) != "" ||
 			strings.TrimSpace(raw.Remark) != "" ||
 			len(raw.Members) > 0
 		if content == "" {
@@ -324,8 +326,11 @@ func handleProjectSubtasksBatch(w http.ResponseWriter, r *http.Request) {
 			st.OwnerUserID = project.ManagerUserID
 			st.OwnerName = project.ManagerName
 		}
-		st.ActualStartDate = ""
-		st.ActualEndDate = ""
+		st.PlannedStartDate = strings.TrimSpace(st.PlannedStartDate)
+		st.PlannedEndDate = strings.TrimSpace(st.PlannedEndDate)
+		st.ActualStartDate = strings.TrimSpace(st.ActualStartDate)
+		st.ActualEndDate = strings.TrimSpace(st.ActualEndDate)
+		st.Remark = strings.TrimSpace(st.Remark)
 		// 成员只取有效 userid，通常 0～1 人
 		members := make([]db.ProjectMember, 0, len(st.Members))
 		seen := make(map[string]struct{})
