@@ -11,17 +11,18 @@ const dashboardDeptUnassigned = "（未分配部门）"
 
 // DashboardDeptPunctuality 部门子任务准时率。
 //
-// 统计规则：
-//   - 已完结：实际完成日 ≤ 计划完成日 → 准时；否则不准时
-//   - 未完结且已过计划完成日 → 不准时
-//   - 未到期且未完结 → 不计入分母
-//   - 无计划完成日 → 不计入
+// 统计规则（有计划完成日才统计）：
+//   - Total：该部门名下有计划完成日的子任务总数（含未到期）
+//   - NotDue：未到期且未完结（不进准时率分母）
+//   - OnTime：已完结且实际完成日 ≤ 计划完成日
+//   - Rate：OnTime / (Total - NotDue)；分母含「已到期未完结」与「已完结」
 //
 // 部门归属：取子任务成员所属部门的并集；一人多部门时该子任务在各部门各计 1 次。
 type DashboardDeptPunctuality struct {
 	DepartmentID   int64   `json:"department_id"`
 	DepartmentName string  `json:"department_name"`
 	Total          int     `json:"total"`
+	NotDue         int     `json:"not_due"`
 	OnTime         int     `json:"on_time"`
 	Rate           float64 `json:"rate"`
 }
@@ -30,6 +31,15 @@ type userDeptRef struct {
 	ID   int64
 	Name string
 }
+
+type punctualityClass int
+
+const (
+	punctualitySkip punctualityClass = iota
+	punctualityNotDue
+	punctualityOnTime
+	punctualityLate
+)
 
 func mapUserDepartments(db *sql.DB) (map[string][]userDeptRef, error) {
 	rows, err := db.Query(`
@@ -62,27 +72,28 @@ func mapUserDepartments(db *sql.DB) (map[string][]userDeptRef, error) {
 	return out, rows.Err()
 }
 
-// classifySubtaskPunctuality 返回是否纳入统计、是否准时。
-func classifySubtaskPunctuality(s ProjectSubtask) (included bool, onTime bool) {
+// classifySubtaskPunctuality 分类子任务准时状态。
+func classifySubtaskPunctuality(s ProjectSubtask) punctualityClass {
 	planned, ok := parseDateOnly(s.PlannedEndDate)
 	if !ok {
-		return false, false
+		return punctualitySkip
 	}
 
 	if normalizeDateString(s.ActualEndDate) != "" {
 		actual, ok := parseDateOnly(s.ActualEndDate)
 		if !ok {
-			return true, false
+			return punctualityLate
 		}
-		// 实际完成日 ≤ 计划完成日
-		return true, !actual.After(planned)
+		if actual.After(planned) {
+			return punctualityLate
+		}
+		return punctualityOnTime
 	}
 
-	// 未完结：已过计划完成日计不准时；未到期不计入
 	if todayDateOnly().After(planned) {
-		return true, false
+		return punctualityLate
 	}
-	return false, false
+	return punctualityNotDue
 }
 
 func collectSubtaskDepartmentIDs(subtask ProjectSubtask, userDepts map[string][]userDeptRef) map[int64]string {
@@ -107,49 +118,58 @@ func buildDepartmentPunctuality(
 	type bucket struct {
 		name   string
 		total  int
+		notDue int
 		onTime int
 	}
 	buckets := make(map[int64]*bucket)
 
-	add := func(deptID int64, deptName string, onTime bool) {
+	add := func(deptID int64, deptName string, class punctualityClass) {
+		if class == punctualitySkip {
+			return
+		}
 		b := buckets[deptID]
 		if b == nil {
 			b = &bucket{name: deptName}
 			buckets[deptID] = b
 		}
 		b.total++
-		if onTime {
+		switch class {
+		case punctualityNotDue:
+			b.notDue++
+		case punctualityOnTime:
 			b.onTime++
 		}
 	}
 
 	for _, project := range projects {
 		for _, subtask := range subtasksByProject[project.ID] {
-			included, onTime := classifySubtaskPunctuality(subtask)
-			if !included {
+			class := classifySubtaskPunctuality(subtask)
+			if class == punctualitySkip {
 				continue
 			}
 			depts := collectSubtaskDepartmentIDs(subtask, userDepts)
 			if len(depts) == 0 {
-				add(0, dashboardDeptUnassigned, onTime)
+				add(0, dashboardDeptUnassigned, class)
 				continue
 			}
 			for id, name := range depts {
-				add(id, name, onTime)
+				add(id, name, class)
 			}
 		}
 	}
 
 	out := make([]DashboardDeptPunctuality, 0, len(buckets))
 	for id, b := range buckets {
+		scored := b.total - b.notDue
 		rate := 0.0
-		if b.total > 0 {
-			rate = math.Round(float64(b.onTime)*10000/float64(b.total)) / 100
+		if scored > 0 {
+			rate = math.Round(float64(b.onTime)*10000/float64(scored)) / 100
 		}
 		out = append(out, DashboardDeptPunctuality{
 			DepartmentID:   id,
 			DepartmentName: b.name,
 			Total:          b.total,
+			NotDue:         b.notDue,
 			OnTime:         b.onTime,
 			Rate:           rate,
 		})
