@@ -2,6 +2,13 @@
   "entries": [
     {
       "date": "2026-09-18",
+      "version": "1.2.34",
+      "changes": [
+        "修复：总览看板宽屏三列改用单行 CSS Grid + stretch（比嵌套 flex-basis:0 更可靠），解决卡片标题与内容错位/塌陷的问题"
+      ]
+    },
+    {
+      "date": "2026-09-18",
       "version": "1.2.33",
       "changes": [
         "修复：总览看板三列改用 flex + align-items:stretch 自动同高，不再锁定整页高度/隐藏溢出（此前的锁高导致「项目进度」被裁切、无法滚动看全）"
