@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/xiaoluoDD/my-backend-services/internal/db"
 )
@@ -229,5 +231,185 @@ func deleteProjectSubtask(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "msg": map[bool]string{true: "子任务已删除；项目实际完结日期已按子任务状态重算", false: "子任务已删除"}[cleared], "id": id,
+	})
+}
+
+type batchSubtasksPayload struct {
+	ProjectID int64              `json:"project_id"`
+	Subtasks  []db.ProjectSubtask `json:"subtasks"`
+}
+
+const maxBatchSubtasks = 50
+
+// handleProjectSubtasksBatch 批量新建子任务（Excel 表格式录入）。
+// 空行（内容为空且无其他有效字段）自动跳过；有内容以外字段但内容为空则报错。
+func handleProjectSubtasksBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+			"ok": false, "error": "请使用 POST",
+		})
+		return
+	}
+	if !requireEditProjects(w, r) {
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "读取请求失败",
+		})
+		return
+	}
+	var payload batchSubtasksPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "请求体格式错误",
+		})
+		return
+	}
+	if payload.ProjectID <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "请提供 project_id",
+		})
+		return
+	}
+	if len(payload.Subtasks) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "请至少填写一行子任务",
+		})
+		return
+	}
+	if len(payload.Subtasks) > maxBatchSubtasks {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": fmt.Sprintf("单次最多新建 %d 条子任务", maxBatchSubtasks),
+		})
+		return
+	}
+
+	project, err := db.GetProject(sqlDB, payload.ProjectID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "项目不存在",
+		})
+		return
+	}
+
+	type preparedRow struct {
+		rowIndex int
+		subtask  db.ProjectSubtask
+	}
+	prepared := make([]preparedRow, 0, len(payload.Subtasks))
+	for i, raw := range payload.Subtasks {
+		content := strings.TrimSpace(raw.Content)
+		hasExtra := strings.TrimSpace(raw.PlannedStartDate) != "" ||
+			strings.TrimSpace(raw.PlannedEndDate) != "" ||
+			strings.TrimSpace(raw.Remark) != "" ||
+			len(raw.Members) > 0
+		if content == "" {
+			if hasExtra {
+				writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+					"ok": false, "error": fmt.Sprintf("第 %d 行：已填写其他字段，但任务内容不能为空", i+1),
+				})
+				return
+			}
+			continue
+		}
+		st := raw
+		st.ID = 0
+		st.ProjectID = payload.ProjectID
+		st.Content = content
+		// 批量新建时负责人固定为项目负责人（前端也会传，这里再兜底一次）
+		if strings.TrimSpace(st.OwnerUserID) == "" && strings.TrimSpace(st.OwnerName) == "" {
+			st.OwnerUserID = project.ManagerUserID
+			st.OwnerName = project.ManagerName
+		}
+		st.ActualStartDate = ""
+		st.ActualEndDate = ""
+		// 成员只取有效 userid，通常 0～1 人
+		members := make([]db.ProjectMember, 0, len(st.Members))
+		seen := make(map[string]struct{})
+		for _, m := range st.Members {
+			uid := strings.TrimSpace(m.UserID)
+			if uid == "" {
+				continue
+			}
+			if _, ok := seen[uid]; ok {
+				continue
+			}
+			seen[uid] = struct{}{}
+			members = append(members, db.ProjectMember{
+				UserID: uid,
+				Name:   strings.TrimSpace(m.Name),
+			})
+		}
+		st.Members = members
+		prepared = append(prepared, preparedRow{rowIndex: i + 1, subtask: st})
+	}
+	if len(prepared) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "没有可创建的子任务（请至少填写一行任务内容）",
+		})
+		return
+	}
+
+	wasOnProject := projectMemberSnapshot(payload.ProjectID)
+	created := make([]db.ProjectSubtask, 0, len(prepared))
+	for _, item := range prepared {
+		id, err := db.CreateProjectSubtask(sqlDB, item.subtask)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"ok":      false,
+				"error":   fmt.Sprintf("第 %d 行创建失败：%s", item.rowIndex, err.Error()),
+				"created": len(created),
+			})
+			return
+		}
+		full, err := loadSubtaskWithMembers(id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"ok":      false,
+				"error":   fmt.Sprintf("第 %d 行创建后读取失败：%s", item.rowIndex, err.Error()),
+				"created": len(created),
+			})
+			return
+		}
+		created = append(created, full)
+	}
+
+	cleared, err := db.ReconcileProjectEndDate(sqlDB, payload.ProjectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(), "created": len(created),
+		})
+		return
+	}
+	if err := syncSubtaskMembersToProject(payload.ProjectID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(), "created": len(created),
+		})
+		return
+	}
+
+	// 通知：按创建顺序发送；已通知过「加入项目」的成员记入快照，避免同批重复刷屏
+	for _, st := range created {
+		notifyNewSubtaskMembers(payload.ProjectID, st, st.Members, wasOnProject)
+		for _, m := range st.Members {
+			if m.UserID != "" {
+				wasOnProject[m.UserID] = struct{}{}
+			}
+		}
+	}
+
+	msg := fmt.Sprintf("已批量创建 %d 条子任务", len(created))
+	if cleared {
+		msg += "；项目原已完结，已清空实际完结日期并更新项目状态"
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":                         true,
+		"msg":                        msg,
+		"count":                      len(created),
+		"subtasks":                   created,
+		"project_completion_cleared": cleared,
 	})
 }

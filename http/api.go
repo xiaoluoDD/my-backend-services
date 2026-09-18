@@ -177,6 +177,7 @@ func main() {
 	http.HandleFunc("/api/accounts/login-history", handleAccountLoginHistory)
 	http.HandleFunc("/api/projects", handleProjects)
 	http.HandleFunc("/api/project-subtasks", handleProjectSubtasks)
+	http.HandleFunc("/api/project-subtasks/batch", handleProjectSubtasksBatch)
 	http.HandleFunc("/api/warehouse/", handleWarehouse)
 	http.HandleFunc("/api/warehouse", handleWarehouse)
 	http.HandleFunc("/api/dashboard/summary", handleDashboardSummary)
@@ -211,6 +212,7 @@ func main() {
 		"accounts_login_history", "GET /api/accounts/login-history?username=",
 		"projects", "GET|POST|PUT|DELETE /api/projects",
 		"project_subtasks", "GET|POST|PUT|DELETE /api/project-subtasks",
+		"project_subtasks_batch", "POST /api/project-subtasks/batch",
 		"warehouse", "GET|POST /api/warehouse/purchase-orders, POST /api/warehouse/purchase-orders/stock-in, GET /api/warehouse/stock-in-history",
 		"dashboard_summary", "GET /api/dashboard/summary?year=",
 		"dashboard_person_tasks", "GET /api/dashboard/person-tasks?userid=&name=&status=&year=",
