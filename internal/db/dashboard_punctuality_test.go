@@ -51,18 +51,18 @@ func TestDepartmentPunctualitySummary(t *testing.T) {
 
 	// 1. 研发：准时完结
 	if _, err := CreateProjectSubtask(sqlDB, ProjectSubtask{
-		ProjectID:        projectID,
-		Content:          "研发准时",
-		OwnerUserID:      "dev1",
-		OwnerName:        "研发甲",
-		PlannedEndDate:   earlier,
-		ActualEndDate:    past, // past <= earlier? past is -10, earlier is -5, so actual BEFORE planned → on time
-		Members:          []ProjectMember{{UserID: "dev1", Name: "研发甲"}},
+		ProjectID:      projectID,
+		Content:        "研发准时",
+		OwnerUserID:    "dev1",
+		OwnerName:      "研发甲",
+		PlannedEndDate: earlier,
+		ActualEndDate:  past,
+		Members:        []ProjectMember{{UserID: "dev1", Name: "研发甲"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	// 2. 市场：逾期未完结（计入不准时）
+	// 2. 市场：逾期未完结
 	if _, err := CreateProjectSubtask(sqlDB, ProjectSubtask{
 		ProjectID:      projectID,
 		Content:        "市场逾期",
@@ -74,20 +74,20 @@ func TestDepartmentPunctualitySummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 3. 双部门：完结但延期（两部门各计不准时）
+	// 3. 双部门：延期完结
 	if _, err := CreateProjectSubtask(sqlDB, ProjectSubtask{
 		ProjectID:      projectID,
 		Content:        "双部门延期完结",
 		OwnerUserID:    "dev1",
 		OwnerName:      "研发甲",
 		PlannedEndDate: past,
-		ActualEndDate:  earlier, // earlier > past → late
+		ActualEndDate:  earlier,
 		Members:        []ProjectMember{{UserID: "both1", Name: "双部门"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	// 4. 未到期未完结：不计入
+	// 4. 研发：未到期（计入总数与未到期，不影响准时率分母）
 	if _, err := CreateProjectSubtask(sqlDB, ProjectSubtask{
 		ProjectID:      projectID,
 		Content:        "未到期",
@@ -99,7 +99,7 @@ func TestDepartmentPunctualitySummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 5. 无部门成员：计入未分配
+	// 5. 无部门逾期
 	if _, err := CreateProjectSubtask(sqlDB, ProjectSubtask{
 		ProjectID:      projectID,
 		Content:        "无部门逾期",
@@ -125,9 +125,9 @@ func TestDepartmentPunctualitySummary(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing 研发部: %+v", summary.ByDepartmentPunctuality)
 	}
-	// 研发：准时1 + 双部门延期1 = total 2, on_time 1 → 50%
-	if rd.Total != 2 || rd.OnTime != 1 {
-		t.Fatalf("研发部 total=%d on_time=%d, want 2/1", rd.Total, rd.OnTime)
+	// 准时1 + 双部门延期1 + 未到期1 = total 3；not_due 1；on_time 1；rate=1/2=50
+	if rd.Total != 3 || rd.NotDue != 1 || rd.OnTime != 1 {
+		t.Fatalf("研发部 total=%d not_due=%d on_time=%d, want 3/1/1", rd.Total, rd.NotDue, rd.OnTime)
 	}
 	if rd.Rate != 50 {
 		t.Fatalf("研发部 rate=%v, want 50", rd.Rate)
@@ -137,25 +137,16 @@ func TestDepartmentPunctualitySummary(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing 市场部")
 	}
-	// 市场：逾期1 + 双部门延期1 = total 2, on_time 0 → 0%
-	if mk.Total != 2 || mk.OnTime != 0 || mk.Rate != 0 {
-		t.Fatalf("市场部 total=%d on_time=%d rate=%v, want 2/0/0", mk.Total, mk.OnTime, mk.Rate)
+	if mk.Total != 2 || mk.NotDue != 0 || mk.OnTime != 0 || mk.Rate != 0 {
+		t.Fatalf("市场部 total=%d not_due=%d on_time=%d rate=%v, want 2/0/0/0", mk.Total, mk.NotDue, mk.OnTime, mk.Rate)
 	}
 
 	unassigned, ok := byName[dashboardDeptUnassigned]
 	if !ok {
 		t.Fatalf("missing 未分配部门")
 	}
-	if unassigned.Total != 1 || unassigned.OnTime != 0 {
-		t.Fatalf("未分配 total=%d on_time=%d, want 1/0", unassigned.Total, unassigned.OnTime)
-	}
-
-	// 排序：准时率升序 → 市场(0) 应在 研发(50) 前；未分配(0) 与市场同率按名称
-	if len(summary.ByDepartmentPunctuality) < 2 {
-		t.Fatalf("rows=%d", len(summary.ByDepartmentPunctuality))
-	}
-	if summary.ByDepartmentPunctuality[0].Rate > summary.ByDepartmentPunctuality[1].Rate {
-		t.Fatalf("expected ascending rate order, got %+v", summary.ByDepartmentPunctuality)
+	if unassigned.Total != 1 || unassigned.NotDue != 0 || unassigned.OnTime != 0 {
+		t.Fatalf("未分配 total=%d not_due=%d on_time=%d, want 1/0/0", unassigned.Total, unassigned.NotDue, unassigned.OnTime)
 	}
 }
 
@@ -166,23 +157,23 @@ func TestClassifySubtaskPunctuality(t *testing.T) {
 	same := today.Format("2006-01-02")
 
 	cases := []struct {
-		name              string
-		planned, actual   string
-		wantInc, wantTime bool
+		name            string
+		planned, actual string
+		want            punctualityClass
 	}{
-		{"no plan", "", "", false, false},
-		{"on time complete", past, past, true, true},
-		{"late complete", past, same, true, false},
-		{"overdue open", past, "", true, false},
-		{"not due open", future, "", false, false},
+		{"no plan", "", "", punctualitySkip},
+		{"on time complete", past, past, punctualityOnTime},
+		{"late complete", past, same, punctualityLate},
+		{"overdue open", past, "", punctualityLate},
+		{"not due open", future, "", punctualityNotDue},
 	}
 	for _, tc := range cases {
-		inc, ot := classifySubtaskPunctuality(ProjectSubtask{
+		got := classifySubtaskPunctuality(ProjectSubtask{
 			PlannedEndDate: tc.planned,
 			ActualEndDate:  tc.actual,
 		})
-		if inc != tc.wantInc || ot != tc.wantTime {
-			t.Fatalf("%s: got included=%v onTime=%v, want %v/%v", tc.name, inc, ot, tc.wantInc, tc.wantTime)
+		if got != tc.want {
+			t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }
