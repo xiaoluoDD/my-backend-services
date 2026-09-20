@@ -160,19 +160,10 @@ func handleProjects(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		listProjects(w, r)
 	case http.MethodPost:
-		if !requireEditProjects(w, r) {
-			return
-		}
 		createProject(w, r)
 	case http.MethodPut:
-		if !requireEditProjects(w, r) {
-			return
-		}
 		updateProject(w, r)
 	case http.MethodDelete:
-		if !requireEditProjects(w, r) {
-			return
-		}
 		deleteProject(w, r)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
@@ -243,6 +234,11 @@ func listProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func createProject(w http.ResponseWriter, r *http.Request) {
+	user, bypass, ok := getProjectEditor(w, r)
+	if !ok {
+		return
+	}
+
 	p, err := decodeProjectPayload(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -255,6 +251,10 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": msg,
 		})
+		return
+	}
+
+	if !requireCanAssignManager(w, user, bypass, model.ManagerName) {
 		return
 	}
 
@@ -282,6 +282,11 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateProject(w http.ResponseWriter, r *http.Request) {
+	user, bypass, ok := getProjectEditor(w, r)
+	if !ok {
+		return
+	}
+
 	p, err := decodeProjectPayload(r)
 	if err != nil || p.ID <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -289,6 +294,18 @@ func updateProject(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	existing, err := db.GetProject(sqlDB, p.ID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"ok": false, "error": "项目不存在",
+		})
+		return
+	}
+	if !requireOwnedProject(w, user, bypass, existing.ManagerName) {
+		return
+	}
+
 	model, msg := prepareProjectModel(p)
 	if msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -297,6 +314,19 @@ func updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model.ID = p.ID
+
+	// 普通用户不可变更负责人；管理员/root 可改
+	if !bypass && !db.IsAdminOrAbove(user) {
+		sameName := db.NormalizePersonName(model.ManagerName) == db.NormalizePersonName(existing.ManagerName)
+		sameID := strings.TrimSpace(model.ManagerUserID) == strings.TrimSpace(existing.ManagerUserID)
+		if !sameName || !sameID {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{
+				"ok":    false,
+				"error": "仅管理员可变更项目负责人",
+			})
+			return
+		}
+	}
 
 	// 填写实际完结日期前：若存在未完结子任务则拒绝
 	if strings.TrimSpace(model.EndDate) != "" {
@@ -341,12 +371,28 @@ func updateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteProject(w http.ResponseWriter, r *http.Request) {
+	user, bypass, ok := getProjectEditor(w, r)
+	if !ok {
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": "请使用 ?id=数字",
 		})
+		return
+	}
+
+	existing, err := db.GetProject(sqlDB, id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"ok": false, "error": "项目不存在",
+		})
+		return
+	}
+	if !requireOwnedProject(w, user, bypass, existing.ManagerName) {
 		return
 	}
 

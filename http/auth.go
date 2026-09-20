@@ -52,20 +52,66 @@ func requireManageAccounts(w http.ResponseWriter, r *http.Request) (db.AuthUser,
 // requireEditProjects 校验可编辑项目权限。
 // 无 Token 时兼容桌面端 Qt（暂不强制登录）；有 Token 则必须具备编辑权限。
 func requireEditProjects(w http.ResponseWriter, r *http.Request) bool {
+	_, _, ok := getProjectEditor(w, r)
+	return ok
+}
+
+// getProjectEditor 返回当前写操作身份。
+// bypass=true 表示无 Token（Qt 兼容），调用方跳过「项目负责人」归属校验。
+func getProjectEditor(w http.ResponseWriter, r *http.Request) (user db.AuthUser, bypass bool, ok bool) {
 	token := bearerToken(r)
 	if token == "" {
-		return true
+		return db.AuthUser{}, true, true
 	}
 	user, err := currentAuthUser(r)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
 			"ok": false, "error": "登录已失效，请重新登录",
 		})
-		return false
+		return db.AuthUser{}, false, false
 	}
 	if !user.CanEditProjects {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{
 			"ok": false, "error": "当前账户无权修改项目",
+		})
+		return user, false, false
+	}
+	return user, false, true
+}
+
+// requireOwnedProject 校验当前用户可改该项目（负责人姓名匹配或管理员/root）。
+// bypass（无 Token）时直接放行，保持 Qt 兼容。
+func requireOwnedProject(w http.ResponseWriter, user db.AuthUser, bypass bool, managerName string) bool {
+	if bypass {
+		return true
+	}
+	if db.CanEditOwnedProject(user, managerName) {
+		return true
+	}
+	writeJSON(w, http.StatusForbidden, map[string]interface{}{
+		"ok":    false,
+		"error": "仅项目负责人或管理员可修改该项目",
+	})
+	return false
+}
+
+// requireCanAssignManager 普通用户新建/保存时负责人必须是自己；管理员/root 可指定任意人。
+func requireCanAssignManager(w http.ResponseWriter, user db.AuthUser, bypass bool, managerName string) bool {
+	if bypass || db.IsAdminOrAbove(user) {
+		return true
+	}
+	identity := db.AuthUserIdentityName(user)
+	if identity == "" {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{
+			"ok":    false,
+			"error": "当前账户未设置姓名，无法作为项目负责人",
+		})
+		return false
+	}
+	if db.NormalizePersonName(managerName) != identity {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{
+			"ok":    false,
+			"error": "普通账户新建/保存项目时，负责人必须是本人",
 		})
 		return false
 	}

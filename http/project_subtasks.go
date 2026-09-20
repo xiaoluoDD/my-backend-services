@@ -16,25 +16,32 @@ func handleProjectSubtasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		listProjectSubtasks(w, r)
 	case http.MethodPost:
-		if !requireEditProjects(w, r) {
-			return
-		}
 		createProjectSubtask(w, r)
 	case http.MethodPut:
-		if !requireEditProjects(w, r) {
-			return
-		}
 		updateProjectSubtask(w, r)
 	case http.MethodDelete:
-		if !requireEditProjects(w, r) {
-			return
-		}
 		deleteProjectSubtask(w, r)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
 			"ok": false, "error": "请使用 GET / POST / PUT / DELETE",
 		})
 	}
+}
+
+// requireOwnedProjectByID 按项目 id 校验写权限。
+func requireOwnedProjectByID(w http.ResponseWriter, r *http.Request, projectID int64) bool {
+	user, bypass, ok := getProjectEditor(w, r)
+	if !ok {
+		return false
+	}
+	project, err := db.GetProject(sqlDB, projectID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"ok": false, "error": "项目不存在",
+		})
+		return false
+	}
+	return requireOwnedProject(w, user, bypass, project.ManagerName)
 }
 
 func decodeSubtaskPayload(r *http.Request) (db.ProjectSubtask, error) {
@@ -98,6 +105,9 @@ func createProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if !requireOwnedProjectByID(w, r, s.ProjectID) {
+		return
+	}
 
 	wasOnProject := projectMemberSnapshot(s.ProjectID)
 
@@ -149,6 +159,9 @@ func updateProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": "请提供有效的 id 与 project_id",
 		})
+		return
+	}
+	if !requireOwnedProjectByID(w, r, s.ProjectID) {
 		return
 	}
 	before, err := loadSubtaskWithMembers(s.ID)
@@ -210,6 +223,9 @@ func deleteProjectSubtask(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if !requireOwnedProjectByID(w, r, before.ProjectID) {
+		return
+	}
 	if err := db.DeleteProjectSubtask(sqlDB, id); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": err.Error(),
@@ -250,9 +266,6 @@ func handleProjectSubtasksBatch(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if !requireEditProjects(w, r) {
-		return
-	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -272,6 +285,9 @@ func handleProjectSubtasksBatch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": "请提供 project_id",
 		})
+		return
+	}
+	if !requireOwnedProjectByID(w, r, payload.ProjectID) {
 		return
 	}
 	if len(payload.Subtasks) == 0 {
