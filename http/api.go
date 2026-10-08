@@ -178,6 +178,7 @@ func main() {
 	http.HandleFunc("/api/projects", handleProjects)
 	http.HandleFunc("/api/project-subtasks", handleProjectSubtasks)
 	http.HandleFunc("/api/project-subtasks/batch", handleProjectSubtasksBatch)
+	http.HandleFunc("/api/gantt/export", handleGanttExport)
 	http.HandleFunc("/api/warehouse/", handleWarehouse)
 	http.HandleFunc("/api/warehouse", handleWarehouse)
 	http.HandleFunc("/api/dashboard/summary", handleDashboardSummary)
