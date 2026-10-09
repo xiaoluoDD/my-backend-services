@@ -171,6 +171,9 @@ func main() {
 	})
 
 	http.HandleFunc("/api/settings", handleSettings)
+	http.HandleFunc("/api/assistant/status", handleAssistant)
+	http.HandleFunc("/api/assistant/settings", handleAssistant)
+	http.HandleFunc("/api/assistant/ask", handleAssistant)
 	http.HandleFunc("/api/auth/", handleAuth)
 	http.HandleFunc("/api/auth", handleAuth)
 	http.HandleFunc("/api/accounts", handleAccounts)
