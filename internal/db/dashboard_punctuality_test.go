@@ -157,6 +157,43 @@ func TestDepartmentPunctualitySummary(t *testing.T) {
 	if summary.ByDepartmentPunctuality[0].Rate > summary.ByDepartmentPunctuality[1].Rate {
 		t.Fatalf("expected ascending rate order, got %+v", summary.ByDepartmentPunctuality)
 	}
+
+	allRD, err := ListDashboardDepartmentTasks(sqlDB, rd.DepartmentID, rd.DepartmentName, "2026", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allRD) != 3 {
+		t.Fatalf("研发部明细=%d, want 3", len(allRD))
+	}
+	onTime, err := ListDashboardDepartmentTasks(sqlDB, rd.DepartmentID, rd.DepartmentName, "2026", "on_time")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onTime) != 1 || onTime[0].Content != "研发准时" || onTime[0].Punctuality != "准时" {
+		t.Fatalf("研发准时明细=%+v", onTime)
+	}
+	notDue, err := ListDashboardDepartmentTasks(sqlDB, rd.DepartmentID, rd.DepartmentName, "2026", "not_due")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notDue) != 1 || notDue[0].Punctuality != "未到期" {
+		t.Fatalf("研发未到期明细=%+v", notDue)
+	}
+	scored, err := ListDashboardDepartmentTasks(sqlDB, rd.DepartmentID, rd.DepartmentName, "2026", "scored")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scored) != 2 {
+		t.Fatalf("研发计入准时率=%d, want 2", len(scored))
+	}
+
+	unassignedRows, err := ListDashboardDepartmentTasks(sqlDB, 0, dashboardDeptUnassigned, "2026", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unassignedRows) != 1 || unassignedRows[0].Content != "无部门逾期" || unassignedRows[0].Punctuality != "不准时" {
+		t.Fatalf("未分配明细=%+v", unassignedRows)
+	}
 }
 
 func TestClassifySubtaskPunctuality(t *testing.T) {

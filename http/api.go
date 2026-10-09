@@ -183,6 +183,7 @@ func main() {
 	http.HandleFunc("/api/warehouse", handleWarehouse)
 	http.HandleFunc("/api/dashboard/summary", handleDashboardSummary)
 	http.HandleFunc("/api/dashboard/person-tasks", handleDashboardPersonTasks)
+	http.HandleFunc("/api/dashboard/department-tasks", handleDashboardDepartmentTasks)
 	http.HandleFunc("/api/changelog", handleChangelog)
 	http.HandleFunc("/api/departments", handleDepartments)
 	http.HandleFunc("/api/departments/cleanup-manual", handleDeleteManualDepartments)

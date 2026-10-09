@@ -63,3 +63,41 @@ func handleDashboardPersonTasks(w http.ResponseWriter, r *http.Request) {
 		"tasks": rows,
 	})
 }
+
+func handleDashboardDepartmentTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+			"ok": false, "error": "请使用 GET",
+		})
+		return
+	}
+
+	idRaw := r.URL.Query().Get("department_id")
+	name := strings.TrimSpace(r.URL.Query().Get("department_name"))
+	departmentID, hasID := db.ParseDepartmentID(idRaw)
+	if idRaw != "" && !hasID {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "部门参数不正确",
+		})
+		return
+	}
+	if !hasID && name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "请指定部门",
+		})
+		return
+	}
+
+	rows, err := db.ListDashboardDepartmentTasks(sqlDB, departmentID, name, r.URL.Query().Get("year"), r.URL.Query().Get("kind"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":    true,
+		"tasks": rows,
+	})
+}
