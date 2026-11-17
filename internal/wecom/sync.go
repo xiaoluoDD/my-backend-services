@@ -109,7 +109,8 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 		}
 	}
 
-	enrichMemberDetails(token, members)
+	// 全量 user/get，拿到真正的 main_department（同步只保留主部门）。
+	enrichMainDepartments(token, members)
 
 	departments, err := FetchDepartments(token)
 	if err != nil {
@@ -143,6 +144,7 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 		}
 	}
 
+	// user/get 未返回部门时，用部门成员列表兜底补全；仍优先后续只落主部门。
 	if len(departments) > 0 {
 		deptIndex, idxErr := BuildUserDepartmentIndex(token, departments)
 		if idxErr != nil {
@@ -150,11 +152,14 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 		} else {
 			filled := 0
 			for userid, m := range members {
-				if len(m.Departments) > 0 {
+				if m.MainDepartment > 0 || len(m.Departments) > 0 {
 					continue
 				}
 				if ids, ok := deptIndex[userid]; ok && len(ids) > 0 {
 					m.Departments = ids
+					if m.MainDepartment <= 0 {
+						m.MainDepartment = ids[0]
+					}
 					filled++
 					log.Info("sync: department from dept user/list", "userid", userid, "dept_ids", len(ids))
 				}
@@ -165,32 +170,35 @@ func SyncUsersToDB(sqlDB *sql.DB) (*SyncResult, error) {
 
 	now := time.Now().Format(time.RFC3339)
 	users := make([]db.AppUser, 0, len(members))
+	onlyMain := 0
 	for _, m := range members {
-		// 一人可能同时属于多个企业微信部门：把所有能映射到本地部门的部门都记下来，
-		// 全部写入 app_user_departments（多对多），不再只取第一个。
-		deptIDs := make([]int64, 0, len(m.Departments))
-		seen := make(map[int64]struct{}, len(m.Departments))
-		for _, wid := range m.Departments {
-			lid, ok := wecomToLocalDept[wid]
-			if !ok || lid <= 0 {
-				continue
+		// 业务规则：每人只保留企微主部门，保证本地一人一部、准时率归属清晰。
+		mainWid := m.MainDepartment
+		if mainWid <= 0 && len(m.Departments) > 0 {
+			mainWid = m.Departments[0]
+		}
+		deptIDs := make([]int64, 0, 1)
+		if mainWid > 0 {
+			if lid, ok := wecomToLocalDept[mainWid]; ok && lid > 0 {
+				deptIDs = append(deptIDs, lid)
+				onlyMain++
 			}
-			if _, dup := seen[lid]; dup {
-				continue
-			}
-			seen[lid] = struct{}{}
-			deptIDs = append(deptIDs, lid)
+		}
+		mainDepts := []int{}
+		if mainWid > 0 {
+			mainDepts = []int{mainWid}
 		}
 		users = append(users, db.AppUser{
 			UserID:        m.UserID,
 			Name:          m.Name,
 			Mobile:        m.Mobile,
-			Departments:   FormatDepartmentNames(m.Departments, deptNames),
+			Departments:   FormatDepartmentNames(mainDepts, deptNames),
 			DepartmentIDs: deptIDs,
 			Sources:       joinSources(m.Sources),
 			UpdatedAt:     now,
 		})
 	}
+	log.Info("sync: main department only", "mapped", onlyMain, "total", len(users))
 
 	if err := db.ReplaceAppUsers(sqlDB, users); err != nil {
 		return finish("failed", 0, fmt.Errorf("save users: %w", err))

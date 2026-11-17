@@ -8,10 +8,9 @@ import (
 )
 
 // AppUser 应用可见范围内的成员（持久化）。
-// 一个成员可以同时属于多个部门（对应企业微信里一人多部门的情况）：
-//   - DepartmentIDs / DepartmentList：该成员当前所属的全部部门（多对多关系表 app_user_departments）。
-//   - DepartmentID / DepartmentName：兼容字段，取 DepartmentIDs 的第一个作为"主部门"，
-//     供历史上按单部门实现的功能（如项目负责人默认部门定位）使用；新代码请优先使用 DepartmentIDs。
+// 同步策略（v1.2.26 起）：只保留企业微信 main_department 对应的本地部门，一人一部。
+//   - DepartmentIDs / DepartmentList：当前所属部门（同步后通常只有主部门一个；手工编辑仍可多选）。
+//   - DepartmentID / DepartmentName：兼容字段；列表接口里 DepartmentName 可能拼成多部门展示名。
 type AppUser struct {
 	UserID         string          `json:"userid"`
 	Name           string          `json:"name"`

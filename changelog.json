@@ -2,9 +2,11 @@
   "entries": [
     {
       "date": "2026-11-17",
-      "version": "1.2.27",
+      "version": "1.2.26",
       "changes": [
-        "新增 GET/POST /api/wecom/preview-main-departments：从企微实时拉取主部门做对照，只读不落库，供确认后再改同步策略"
+        "同步可见成员：只保留企业微信主部门（main_department），本地一人一部，准时率按主部门归属",
+        "新增 GET/POST /api/wecom/preview-main-departments：实时拉取企微主部门做对照（只读不落库）",
+        "修复项目负责人无法新增/批量新增子任务：按 userid 校验权限，先加载项目再鉴权"
       ]
     },
     {
