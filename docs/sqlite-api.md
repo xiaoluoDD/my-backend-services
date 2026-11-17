@@ -16,6 +16,7 @@
 |------|------|------|
 | POST/GET | `/api/wecom/test` | 发送测试消息；POST body: `{"userid":"成员ID"}` |
 | POST/GET | `/api/wecom/sync` | 从企业微信拉取成员并写入数据库 |
+| GET/POST | `/api/wecom/preview-main-departments` | 实时拉取企微 `main_department` 做主部门对照（只读，不落库） |
 | GET | `/api/wecom/users` | 返回已保存的成员列表 |
 | GET | `/api/wecom/stats` | 人数、上次同步、`corp_info` |
 | GET | `/api/db/export` | JSON 导出（项目、成员、统计） |

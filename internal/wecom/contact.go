@@ -159,11 +159,12 @@ func FetchTagMembers(token string, tagID int) (*tagGetResp, error) {
 
 // member 同步过程中的成员聚合。
 type member struct {
-	UserID      string
-	Name        string
-	Mobile      string
-	Departments []int
-	Sources     []string
+	UserID         string
+	Name           string
+	Mobile         string
+	Departments    []int // 企微所属全部部门 ID
+	MainDepartment int   // 企微主部门 ID（user/get.main_department）
+	Sources        []string
 }
 
 func (m *member) addSource(src string) {

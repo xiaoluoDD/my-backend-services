@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "date": "2026-11-17",
+      "version": "1.2.27",
+      "changes": [
+        "新增 GET/POST /api/wecom/preview-main-departments：从企微实时拉取主部门做对照，只读不落库，供确认后再改同步策略"
+      ]
+    },
+    {
       "date": "2026-10-08",
       "version": "1.2.24",
       "changes": [

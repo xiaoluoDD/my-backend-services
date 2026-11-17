@@ -148,6 +148,33 @@ func main() {
 	// 查询已持久化的成员列表 / 更新成员信息
 	http.HandleFunc("/api/wecom/users", handleWecomUsers)
 
+	// 主部门对照：从企微实时拉取 main_department，只读不落库
+	http.HandleFunc("/api/wecom/preview-main-departments", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{
+				"ok": false, "error": "请使用 GET 或 POST",
+			})
+			return
+		}
+		appLog.Info("wecom preview-main-departments requested", "remote", r.RemoteAddr)
+		result, err := wecom.PreviewMainDepartments(sqlDB)
+		if err != nil {
+			appLog.Error("wecom preview-main-departments failed", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"ok": false, "error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ok":         true,
+			"msg":        "主部门对照已生成（未改库）",
+			"users":      result.Users,
+			"summary":    result.Summary,
+			"count":      len(result.Users),
+			"server_now": time.Now().Format("2006-01-02 15:04:05"),
+		})
+	})
+
 	// 数据库与企业信息概览
 	http.HandleFunc("/api/wecom/stats", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -201,6 +228,7 @@ func main() {
 		"ping", "GET /ping",
 		"wecom_test", "GET|POST /api/wecom/test",
 		"wecom_sync", "GET|POST /api/wecom/sync",
+		"wecom_preview_main_departments", "GET|POST /api/wecom/preview-main-departments",
 		"wecom_users", "GET|PUT /api/wecom/users",
 		"departments", "GET|POST|PUT|DELETE /api/departments",
 		"departments_cleanup_manual", "POST /api/departments/cleanup-manual",

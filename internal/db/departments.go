@@ -325,6 +325,33 @@ func UpsertWecomDepartments(sqlDB *sql.DB, depts []WecomDepartmentInput) (map[in
 	return result, tx.Commit()
 }
 
+// MapExistingWecomDepartments 读取本地已关联的企业微信部门映射（只读，不写入）。
+// 返回：企微部门 ID -> 本地部门 ID，以及本地部门 ID -> 名称。
+func MapExistingWecomDepartments(sqlDB *sql.DB) (map[int]int64, map[int64]string, error) {
+	rows, err := sqlDB.Query(
+		`SELECT id, name, wecom_dept_id FROM departments WHERE wecom_dept_id > 0`,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	wecomToLocal := make(map[int]int64)
+	localNames := make(map[int64]string)
+	for rows.Next() {
+		var id, wecomID int64
+		var name string
+		if err := rows.Scan(&id, &name, &wecomID); err != nil {
+			return nil, nil, err
+		}
+		if wecomID > 0 {
+			wecomToLocal[int(wecomID)] = id
+		}
+		localNames[id] = name
+	}
+	return wecomToLocal, localNames, rows.Err()
+}
+
 // ListUsersByDepartmentID 返回指定部门的成员（按多对多关系表匹配，
 // 因此一人挂多个部门时会同时出现在这几个部门的人员列表里）。
 func ListUsersByDepartmentID(db *sql.DB, deptID int64) ([]AppUser, error) {

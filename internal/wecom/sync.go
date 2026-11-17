@@ -244,6 +244,9 @@ func enrichMemberDetails(token string, members map[string]*member) {
 		if len(m.Departments) == 0 && len(depts) > 0 {
 			m.Departments = depts
 		}
+		if detail.MainDepartment > 0 {
+			m.MainDepartment = detail.MainDepartment
+		}
 		log.Info("sync: user/get result", "userid", userid,
 			"dept_ids", len(m.Departments), "main_department", detail.MainDepartment)
 	}
