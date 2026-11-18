@@ -187,6 +187,16 @@ func migrate(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_account_login_logs_user_time
 			ON account_login_logs(username, logged_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS project_department_progress (
+			project_id INTEGER NOT NULL,
+			department_id INTEGER NOT NULL,
+			progress INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL,
+			updated_by TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (project_id, department_id),
+			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+			FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {

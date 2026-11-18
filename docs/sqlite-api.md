@@ -17,6 +17,8 @@
 | POST/GET | `/api/wecom/test` | 发送测试消息；POST body: `{"userid":"成员ID"}` |
 | POST/GET | `/api/wecom/sync` | 从企业微信拉取成员并写入数据库 |
 | GET/POST | `/api/wecom/preview-main-departments` | 实时拉取企微 `main_department` 做主部门对照（只读，不落库） |
+| GET | `/api/department-progress?year=` | 部门进度表：项目 + 参与部门（负责人/成员主部门）及手填进度 |
+| PUT | `/api/department-progress` | 管理员填写某项目某部门进度 0–100：`{project_id,department_id,progress}` |
 | GET | `/api/wecom/users` | 返回已保存的成员列表 |
 | GET | `/api/wecom/stats` | 人数、上次同步、`corp_info` |
 | GET | `/api/db/export` | JSON 导出（项目、成员、统计） |

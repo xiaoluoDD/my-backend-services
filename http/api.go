@@ -211,6 +211,7 @@ func main() {
 	http.HandleFunc("/api/dashboard/summary", handleDashboardSummary)
 	http.HandleFunc("/api/dashboard/person-tasks", handleDashboardPersonTasks)
 	http.HandleFunc("/api/dashboard/department-tasks", handleDashboardDepartmentTasks)
+	http.HandleFunc("/api/department-progress", handleDepartmentProgress)
 	http.HandleFunc("/api/changelog", handleChangelog)
 	http.HandleFunc("/api/departments", handleDepartments)
 	http.HandleFunc("/api/departments/cleanup-manual", handleDeleteManualDepartments)
@@ -246,6 +247,7 @@ func main() {
 		"warehouse", "GET|POST /api/warehouse/purchase-orders, POST /api/warehouse/purchase-orders/stock-in, GET /api/warehouse/stock-in-history",
 		"dashboard_summary", "GET /api/dashboard/summary?year=",
 		"dashboard_person_tasks", "GET /api/dashboard/person-tasks?userid=&name=&status=&year=",
+		"department_progress", "GET|PUT /api/department-progress",
 		"changelog", "GET /api/changelog",
 		"db_export", "GET /api/db/export",
 		"db_download", "GET /api/db/download",
